@@ -8,6 +8,7 @@ This project is at an early stage — we’re starting from the basics and will 
 - Display raw spectra.
 - Basic plotting and inspection tools.
 - Simple GUI for selecting a data file to plot.
+- Interactive span selection to measure peak position and FWHM.
 
 ## Requirements
 - Python 3.10+
@@ -29,6 +30,10 @@ Or launch the GUI to choose a file interactively:
 ```bash
 python -m esr_lab.gui
 ```
+
+After the spectrum is shown, drag the mouse twice over two different peaks.
+The application will calculate the peak position and full width at half
+maximum (FWHM) for each selection and display the results.
 
 ## Project Goals
 
