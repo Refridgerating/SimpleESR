@@ -3,11 +3,12 @@
 from .spectrum import ESRSpectrum
 from .io import ESRLoader
 from .plotter import ESRPlotter
-from .analysis import find_peak
+from .analysis import find_peak, calc_fwhm
 
 __all__ = [
     "ESRSpectrum",
     "ESRLoader",
     "ESRPlotter",
     "find_peak",
+    "calc_fwhm",
 ]
