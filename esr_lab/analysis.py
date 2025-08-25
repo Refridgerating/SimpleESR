@@ -87,3 +87,64 @@ def calc_fwhm(
     """
 
     return float(abs(field[pos_idx] - field[neg_idx]))
+
+
+def fit_lorentzian_derivative(
+    field: np.ndarray,
+    intensity: np.ndarray,
+    p0: tuple[float, float, float, float] | None = None,
+) -> tuple[float, float, float, float]:
+    """Fit a derivative ESR line to a Lorentzian derivative model.
+
+    The measured ESR signal in derivative mode can be represented as the
+    derivative of a superposition of an absorptive (symmetric) and a dispersive
+    (antisymmetric) Lorentzian line.  This function fits the recorded data to
+    this model using non-linear least squares and returns the characteristic
+    parameters of the resonance.
+
+    The model function is::
+
+        dI/dH = A * d/dH L_abs(H) + B * d/dH L_disp(H)
+
+    where ``L_abs`` is the Lorentzian absorption line and ``L_disp`` is the
+    dispersive counterpart.  ``A`` and ``B`` denote the amplitudes of the
+    symmetric and antisymmetric contributions respectively.
+
+    Parameters
+    ----------
+    field:
+        Array of magnetic-field values.
+    intensity:
+        Array of derivative signal intensities corresponding to ``field``.
+    p0:
+        Optional initial guess for the parameters
+        ``(H_res, delta, A, B)``. ``delta`` is the half width at half maximum
+        (HWHM).  If omitted, a heuristic guess is derived from the data.
+
+    Returns
+    -------
+    tuple[float, float, float, float]
+        Fitted parameters ``(H_res, delta, A, B)``.
+    """
+
+    def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float) -> np.ndarray:
+        x = H - H_res
+        denom = (x**2 + delta**2) ** 2
+        sym = -2.0 * delta**2 * x / denom
+        disp = delta * (delta**2 - x**2) / denom
+        return A * sym + B * disp
+
+    if p0 is None:
+        pos_idx = int(np.argmax(intensity))
+        neg_idx = int(np.argmin(intensity))
+        h_res_guess = (field[pos_idx] + field[neg_idx]) / 2.0
+        delta_guess = abs(field[pos_idx] - field[neg_idx]) / 2.0
+        a_guess = (intensity[pos_idx] - intensity[neg_idx]) / 2.0
+        b_guess = 0.0
+        p0 = (h_res_guess, delta_guess, a_guess, b_guess)
+
+    from scipy.optimize import curve_fit
+
+    popt, _ = curve_fit(_model, field, intensity, p0=p0)
+    h_res, delta, A, B = popt
+    return float(h_res), float(delta), float(A), float(B)

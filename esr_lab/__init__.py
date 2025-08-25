@@ -3,7 +3,7 @@
 from .spectrum import ESRSpectrum
 from .io import ESRLoader
 from .plotter import ESRPlotter
-from .analysis import find_peak, calc_fwhm
+from .analysis import find_peak, calc_fwhm, fit_lorentzian_derivative
 
 __all__ = [
     "ESRSpectrum",
@@ -11,4 +11,5 @@ __all__ = [
     "ESRPlotter",
     "find_peak",
     "calc_fwhm",
+    "fit_lorentzian_derivative",
 ]
