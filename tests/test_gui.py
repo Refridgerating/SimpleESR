@@ -1,6 +1,10 @@
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 from unittest.mock import patch
 
 from esr_lab import gui
+from esr_lab.spectrum import ESRSpectrum
 
 
 def test_gui_main(monkeypatch, tmp_path):
@@ -14,6 +18,24 @@ def test_gui_main(monkeypatch, tmp_path):
     monkeypatch.setattr(gui.tk, "Tk", lambda: DummyTk())
     monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kwargs: str(csv_file))
 
-    with patch("esr_lab.gui.ESRPlotter.plot") as plot_mock:
+    with patch("esr_lab.gui.SpanPeakSelector") as selector_mock:
         gui.main()
-        plot_mock.assert_called_once()
+        selector_mock.assert_called_once()
+        selector_mock.return_value.show.assert_called_once()
+
+
+def test_span_selector_analysis():
+    spectrum = ESRSpectrum(field=np.arange(10.0), intensity=np.zeros(10))
+    selector = gui.SpanPeakSelector(spectrum)
+
+    with patch("esr_lab.gui.find_peak", return_value=3) as fp, \
+        patch("esr_lab.gui.calc_fwhm", return_value=0.5) as cf, \
+        patch("esr_lab.gui.messagebox.showinfo") as info:
+        selector.onselect(1.0, 2.0)
+        selector.onselect(5.0, 8.0)
+
+        assert selector.ranges == [(1.0, 2.0), (5.0, 8.0)]
+        assert fp.call_count == 2
+        assert cf.call_count == 2
+        info.assert_called_once()
+
