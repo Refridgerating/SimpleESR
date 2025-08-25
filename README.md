@@ -31,9 +31,11 @@ Or launch the GUI to choose a file interactively:
 python -m esr_lab.gui
 ```
 
-After the spectrum is shown, drag the mouse twice over two different peaks.
-The application will calculate the peak position and full width at half
-maximum (FWHM) for each selection and display the results.
+After the spectrum is shown, drag the mouse over a region that contains the
+positive and negative peaks of an absorption line. The program determines both
+extrema and reports their positions and the full width at half maximum (FWHM)
+given by the distance between them. Repeat the selection for additional
+absorptions.
 
 ## Project Goals
 

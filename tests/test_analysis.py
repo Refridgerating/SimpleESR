@@ -1,54 +1,24 @@
 import numpy as np
+import pytest
 
-from esr_lab import calc_fwhm, find_peak
-
-
-def test_find_peak_single_peak():
-    field = np.linspace(0, 10, 500)
-    intensity = np.exp(-(field - 5) ** 2)
-
-    idx = find_peak(field, intensity, 4, 6)
-
-    assert idx == np.argmax(intensity)
+from esr_lab import find_peak, calc_fwhm
 
 
-def test_find_peak_multiple_peaks():
-    field = np.linspace(0, 10, 500)
-    intensity = (
-        np.exp(-(field - 3) ** 2)  # smaller positive peak
-        - 2 * np.exp(-(field - 7) ** 2)  # larger negative peak
-    )
+def test_find_peak_pair():
+    field = np.arange(10.0)
+    intensity = np.array([0, 1, 0, -1, 0, 2, 0, -2, 0, 0])
 
-    idx = find_peak(field, intensity, 0, 10)
+    pos_idx, neg_idx = find_peak(field, intensity, 4, 8)
 
-    assert idx == np.argmin(intensity)
+    assert pos_idx == 5
+    assert neg_idx == 7
 
 
-def test_calc_fwhm_symmetric_peak():
+def test_calc_fwhm_from_peaks():
     field = np.linspace(-5, 5, 10001)
-    sigma = 0.5
-    intensity = np.exp(-(field ** 2) / (2 * sigma**2))
-    peak_idx = np.argmax(intensity)
+    intensity = field * np.exp(-field**2 / 2)
 
-    width = calc_fwhm(field, intensity, peak_idx)
-    expected = 2 * np.sqrt(2 * np.log(2)) * sigma
+    pos_idx, neg_idx = find_peak(field, intensity, -2, 2)
+    width = calc_fwhm(field, intensity, pos_idx, neg_idx)
 
-    assert np.isclose(width, expected, atol=1e-3)
-
-
-def test_calc_fwhm_asymmetric_peak():
-    field = np.linspace(-5, 5, 10001)
-    mu = 0.0
-    sigma_left = 0.5
-    sigma_right = 1.0
-    intensity = np.where(
-        field < mu,
-        np.exp(-((field - mu) ** 2) / (2 * sigma_left**2)),
-        np.exp(-((field - mu) ** 2) / (2 * sigma_right**2)),
-    )
-    peak_idx = np.argmax(intensity)
-
-    width = calc_fwhm(field, intensity, peak_idx)
-    expected = np.sqrt(2 * np.log(2)) * (sigma_left + sigma_right)
-
-    assert np.isclose(width, expected, atol=1e-3)
+    assert np.isclose(width, 2.0, atol=1e-3)

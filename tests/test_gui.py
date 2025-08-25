@@ -28,7 +28,7 @@ def test_span_selector_analysis():
     spectrum = ESRSpectrum(field=np.arange(10.0), intensity=np.zeros(10))
     selector = gui.SpanPeakSelector(spectrum)
 
-    with patch("esr_lab.gui.find_peak", return_value=3) as fp, \
+    with patch("esr_lab.gui.find_peak", return_value=(1, 3)) as fp, \
         patch("esr_lab.gui.calc_fwhm", return_value=0.5) as cf, \
         patch("esr_lab.gui.messagebox.showinfo") as info:
         selector.onselect(1.0, 2.0)
