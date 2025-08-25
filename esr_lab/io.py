@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Union
+from io import StringIO
 
 import pandas as pd
 
@@ -15,10 +16,12 @@ class ESRLoader:
     def load_csv(path: Union[str, Path]) -> ESRSpectrum:
         """Load a spectrum from a CSV file.
 
-        The loader automatically detects whether values are separated by
-        commas or semicolons.  Only the first two columns are used and they are
-        renamed to ``"BField [mT]"`` for the magnetic field and
-        ``"MW_Absorption []"`` for the intensity.
+        The ESR control software exports data as CSV files with a large
+        metadata header followed by a ``Meas`` section containing the actual
+        spectrum.  The measurement block starts with a line
+        ``BField [mT];MW_Absorption []`` and uses semicolons as delimiters.
+        For backwards compatibility plain CSV files without such a header are
+        also supported.
 
         Parameters
         ----------
@@ -29,17 +32,32 @@ class ESRLoader:
 
         path = Path(path)
 
-        # ``sep=None`` together with the python engine lets pandas sniff the
-        # delimiter, allowing us to support both comma and semicolon separated
-        # data.  This is important because some spectrometers export data using
-        # semicolons which previously resulted in a single-column DataFrame and
-        # downstream ``IndexError`` when accessing the intensity column.
-        df = pd.read_csv(path, sep=None, engine="python")
+        # Read all lines first so we can inspect the header and strip the UTF-8
+        # byte order mark if present.
+        with path.open("r", encoding="utf-8-sig") as f:
+            lines = f.readlines()
+
+        # Find the beginning of the measurement block.
+        data_start = None
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("BField"):
+                data_start = idx
+                break
+
+        if data_start is not None:
+            # Parse only the measurement block using a fixed semicolon
+            # delimiter.  This matches the export format of our spectrometer.
+            data = "".join(lines[data_start:])
+            df = pd.read_csv(StringIO(data), sep=";", engine="python")
+        else:
+            # Fall back to automatic delimiter detection for generic CSV files
+            # that contain only data without a metadata header.
+            df = pd.read_csv(StringIO("".join(lines)), sep=None, engine="python")
 
         # Ensure we have at least two columns for field and intensity.
         if df.shape[1] < 2:
             raise ValueError(
-                "CSV file must contain at least two columns for field and intensity"
+                "CSV file must contain at least two columns for field and intensity",
             )
 
         # Use only the first two columns and give them standard names.
@@ -47,3 +65,4 @@ class ESRLoader:
         df.columns = ["BField [mT]", "MW_Absorption []"]
 
         return ESRSpectrum.from_dataframe(df)
+
