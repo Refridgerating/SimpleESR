@@ -54,10 +54,17 @@ class SpanPeakSelector:
         self.selector.disconnect_events()
         lines = []
         for i, (start, end) in enumerate(self.ranges, start=1):
-            peak_idx = find_peak(self.spectrum.field, self.spectrum.intensity, start, end)
-            fwhm = calc_fwhm(self.spectrum.field, self.spectrum.intensity, peak_idx)
-            field_val = self.spectrum.field[peak_idx]
-            lines.append(f"Peak {i}: field={field_val:.3f}, FWHM={fwhm:.3f}")
+            pos_idx, neg_idx = find_peak(
+                self.spectrum.field, self.spectrum.intensity, start, end
+            )
+            fwhm = calc_fwhm(
+                self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
+            )
+            pos_field = self.spectrum.field[pos_idx]
+            neg_field = self.spectrum.field[neg_idx]
+            lines.append(
+                f"Absorption {i}: pos={pos_field:.3f}, neg={neg_field:.3f}, FWHM={fwhm:.3f}"
+            )
         messagebox.showinfo("Peak analysis", "\n".join(lines))
 
     def show(self) -> None:
