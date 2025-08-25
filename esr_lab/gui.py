@@ -13,7 +13,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
 import matplotlib.pyplot as plt
 
@@ -129,7 +129,10 @@ class SpanPeakSelector:
         self.ax.set_ylabel("Intensity")
         canvas = FigureCanvasTkAgg(fig, master=plot_frame)
         canvas.draw()
+        toolbar = NavigationToolbar2Tk(canvas, plot_frame, pack_toolbar=False)
+        toolbar.update()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
         self.analyse_btn = tk.Button(panel, text="Analyse FWHM", command=self.start_analysis)
         self.analyse_btn.pack(padx=5, pady=5)
