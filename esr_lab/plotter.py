@@ -1,7 +1,7 @@
 """Plotting utilities for ESR spectra."""
 
 import matplotlib.pyplot as plt
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 from .spectrum import ESRSpectrum
 
@@ -48,3 +48,76 @@ class ESRPlotter:
                     ax.axvspan(left, right, color="orange", alpha=0.3)
 
         plt.show()
+
+
+def configure_subplot(
+    ax: plt.Axes,
+    *,
+    color: Optional[str] = None,
+    linewidth: Optional[float] = None,
+    marker: Optional[str] = None,
+    x_label: Optional[str] = None,
+    y_label: Optional[str] = None,
+    title: Optional[str] = None,
+    font_size: Optional[float] = None,
+    x_range: Optional[Tuple[float, float]] = None,
+    y_range: Optional[Tuple[float, float]] = None,
+    x_ticks: Optional[Sequence[float]] = None,
+    y_ticks: Optional[Sequence[float]] = None,
+) -> None:
+    """Configure common display properties of a Matplotlib subplot.
+
+    The function offers a thin convenience wrapper around Matplotlib's ``Axes``
+    methods so that unit tests – and eventually users – can easily tweak the
+    appearance of a plot without touching the Matplotlib API directly.
+    Parameters are optional; only the supplied ones are applied.
+
+    Parameters
+    ----------
+    ax:
+        The :class:`~matplotlib.axes.Axes` instance to configure.
+    color, linewidth, marker:
+        Styling options applied to all lines currently present in ``ax``.
+    x_label, y_label, title:
+        Axis and figure titles.
+    font_size:
+        Font size for axis labels, tick labels and the title.
+    x_range, y_range:
+        Two-tuples specifying the visible axis range.
+    x_ticks, y_ticks:
+        Explicit tick locations for the respective axes.
+    """
+
+    # Line styling -------------------------------------------------------
+    if color is not None or linewidth is not None or marker is not None:
+        for line in ax.lines:
+            if color is not None:
+                line.set_color(color)
+            if linewidth is not None:
+                line.set_linewidth(linewidth)
+            if marker is not None:
+                line.set_marker(marker)
+
+    # Axis labels and title ---------------------------------------------
+    if x_label is not None:
+        ax.set_xlabel(x_label, fontsize=font_size)
+    if y_label is not None:
+        ax.set_ylabel(y_label, fontsize=font_size)
+    if title is not None:
+        ax.set_title(title, fontsize=font_size)
+
+    if font_size is not None:
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontsize(font_size)
+
+    # Axis ranges --------------------------------------------------------
+    if x_range is not None:
+        ax.set_xlim(x_range)
+    if y_range is not None:
+        ax.set_ylim(y_range)
+
+    # Tick marks ---------------------------------------------------------
+    if x_ticks is not None:
+        ax.set_xticks(list(x_ticks))
+    if y_ticks is not None:
+        ax.set_yticks(list(y_ticks))

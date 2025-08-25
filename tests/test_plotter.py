@@ -4,7 +4,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from unittest.mock import patch
 
-from esr_lab.plotter import ESRPlotter
+from esr_lab.plotter import ESRPlotter, configure_subplot
 from esr_lab.spectrum import ESRSpectrum
 
 
@@ -35,4 +35,46 @@ def test_plot_peaks_and_widths():
     fwhm_patch = ax.patches[0]
     assert fwhm_patch.get_x() == peaks[0] - widths[0] / 2
     assert fwhm_patch.get_width() == widths[0]
+    plt.close(fig)
+
+
+def test_configure_subplot_allows_customisation():
+    spectrum = ESRSpectrum(field=np.array([0, 1, 2]), intensity=np.array([1, 2, 3]))
+    plotter = ESRPlotter()
+
+    with patch("matplotlib.pyplot.show"):
+        plotter.plot(spectrum)
+
+    fig = plt.gcf()
+    ax = fig.axes[0]
+
+    configure_subplot(
+        ax,
+        color="green",
+        linewidth=2,
+        marker="o",
+        x_label="X axis",
+        y_label="Y axis",
+        title="Title",
+        font_size=14,
+        x_range=(0, 2),
+        y_range=(1, 3),
+        x_ticks=[0, 1, 2],
+        y_ticks=[1, 2, 3],
+    )
+
+    line = ax.lines[0]
+    assert line.get_color() == "green"
+    assert line.get_linewidth() == 2
+    assert line.get_marker() == "o"
+    assert ax.get_xlabel() == "X axis"
+    assert ax.get_ylabel() == "Y axis"
+    assert ax.get_title() == "Title"
+    assert tuple(ax.get_xlim()) == (0, 2)
+    assert tuple(ax.get_ylim()) == (1, 3)
+    assert list(ax.get_xticks()) == [0, 1, 2]
+    assert list(ax.get_yticks()) == [1, 2, 3]
+    assert ax.xaxis.label.get_fontsize() == 14
+    assert ax.yaxis.label.get_fontsize() == 14
+    assert ax.title.get_fontsize() == 14
     plt.close(fig)
