@@ -179,3 +179,48 @@ def test_filter_ticks_respects_limits():
     assert ax.get_ylim() == (0.0, 1.0)
     plt.close(fig)
 
+
+def test_table_columns_centered(monkeypatch):
+    """Ensure tabulated values are centred for readability."""
+
+    spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+
+    column_cfg: dict[str, dict] = {}
+
+    class DummyTree:
+        def heading(self, *args, **kwargs):
+            pass
+
+        def column(self, col, **cfg):
+            column_cfg[col] = cfg
+
+        def pack(self, *args, **kwargs):
+            pass
+
+    class DummyFrame:
+        def pack(self, *args, **kwargs):
+            pass
+
+    class DummyTk:
+        def title(self, *args, **kwargs):
+            pass
+
+        def mainloop(self):
+            pass
+
+    monkeypatch.setattr(gui.tk, "Tk", lambda: DummyTk())
+    monkeypatch.setattr(gui.tk, "Frame", lambda *a, **k: DummyFrame())
+    monkeypatch.setattr(gui.tk, "Button", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(gui.tk, "Scale", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(gui.tk, "Label", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(gui.ttk, "Treeview", lambda *a, **k: DummyTree())
+    monkeypatch.setattr(gui, "FigureCanvasTkAgg", MagicMock())
+    monkeypatch.setattr(gui, "NavigationToolbarNoSubplots", MagicMock())
+
+    selector.show()
+
+    # All columns created in show should be centred
+    assert column_cfg
+    assert all(cfg.get("anchor") == gui.tk.CENTER for cfg in column_cfg.values())
+
