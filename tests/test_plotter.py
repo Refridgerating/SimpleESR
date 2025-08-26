@@ -57,8 +57,6 @@ def test_configure_subplot_allows_customisation():
         y_label="Y axis",
         title="Title",
         font_size=14,
-        x_range=(0, 2),
-        y_range=(1, 3),
         x_ticks=[0, 1, 2],
         y_ticks=[1, 2, 3],
     )
@@ -70,8 +68,6 @@ def test_configure_subplot_allows_customisation():
     assert ax.get_xlabel() == "X axis"
     assert ax.get_ylabel() == "Y axis"
     assert ax.get_title() == "Title"
-    assert tuple(ax.get_xlim()) == (0, 2)
-    assert tuple(ax.get_ylim()) == (1, 3)
     assert list(ax.get_xticks()) == [0, 1, 2]
     assert list(ax.get_yticks()) == [1, 2, 3]
     assert ax.xaxis.label.get_fontsize() == 14

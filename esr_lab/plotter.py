@@ -60,8 +60,6 @@ def configure_subplot(
     y_label: Optional[str] = None,
     title: Optional[str] = None,
     font_size: Optional[float] = None,
-    x_range: Optional[Tuple[float, float]] = None,
-    y_range: Optional[Tuple[float, float]] = None,
     x_ticks: Optional[Sequence[float]] = None,
     y_ticks: Optional[Sequence[float]] = None,
 ) -> None:
@@ -82,8 +80,6 @@ def configure_subplot(
         Axis and figure titles.
     font_size:
         Font size for axis labels, tick labels and the title.
-    x_range, y_range:
-        Two-tuples specifying the visible axis range.
     x_ticks, y_ticks:
         Explicit tick locations for the respective axes.
     """
@@ -109,12 +105,6 @@ def configure_subplot(
     if font_size is not None:
         for label in ax.get_xticklabels() + ax.get_yticklabels():
             label.set_fontsize(font_size)
-
-    # Axis ranges --------------------------------------------------------
-    if x_range is not None:
-        ax.set_xlim(x_range)
-    if y_range is not None:
-        ax.set_ylim(y_range)
 
     # Tick marks ---------------------------------------------------------
     if x_ticks is not None:
