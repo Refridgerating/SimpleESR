@@ -13,11 +13,12 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
-import matplotlib.pyplot as plt
 
-from .analysis import calc_fwhm, find_peak
+from .analysis import calc_fwhm, find_peak, fit_lorentzian_derivative
 from .io import ESRLoader
 
 
@@ -44,6 +45,7 @@ class SpanPeakSelector:
         self.ax = None
         self.tree: ttk.Treeview | None = None
         self.analyse_btn: tk.Button | None = None
+        self.fit_btn: tk.Button | None = None
         self.selector: SpanSelector | None = None
 
     # ------------------------------------------------------------------
@@ -112,6 +114,41 @@ class SpanPeakSelector:
         messagebox.showinfo("Peak analysis", "\n".join(lines))
 
     # ------------------------------------------------------------------
+    def fit_lorentzian(self) -> None:
+        """Fit a Lorentzian derivative line and optionally keep the overlay."""
+
+        assert self.ax is not None
+        params = fit_lorentzian_derivative(
+            self.spectrum.field, self.spectrum.intensity
+        )
+
+        h_res, delta, A, B = params
+
+        def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float):
+            x = H - H_res
+            denom = (x**2 + delta**2) ** 2
+            sym = -2.0 * delta**2 * x / denom
+            disp = delta * (delta**2 - x**2) / denom
+            return A * sym + B * disp
+
+        fit = _model(self.spectrum.field, h_res, delta, A, B)
+        (line,) = self.ax.plot(self.spectrum.field, fit, label="Lorentzian fit")
+        self.ax.legend()
+        self.ax.figure.canvas.draw_idle()
+
+        accept = messagebox.askyesno(
+            "Lorentzian Fit",
+            (
+                f"H_res={h_res:.3f}\n"
+                f"Delta={delta:.3f}\nA={A:.3f}\nB={B:.3f}\nAccept fit?"
+            ),
+        )
+
+        if not accept:
+            line.remove()
+            self.ax.figure.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
     def show(self) -> None:
         """Start the Tkinter main loop and display the analysis GUI."""
 
@@ -134,8 +171,13 @@ class SpanPeakSelector:
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.analyse_btn = tk.Button(panel, text="Analyse FWHM", command=self.start_analysis)
+        self.analyse_btn = tk.Button(
+            panel, text="Analyse FWHM", command=self.start_analysis
+        )
         self.analyse_btn.pack(padx=5, pady=5)
+
+        self.fit_btn = tk.Button(panel, text="Fit Lorentzian", command=self.fit_lorentzian)
+        self.fit_btn.pack(padx=5, pady=5)
 
         columns = ("pos_x", "pos_y", "neg_x", "neg_y", "fwhm")
         self.tree = ttk.Treeview(panel, columns=columns, show="headings", height=5)
