@@ -44,13 +44,14 @@ def test_span_selector_analysis():
 def test_lorentzian_fit_overlay():
     spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
+    selector.ranges = [(-1, 0), (0, 1)]
 
     fig, selector.ax = plt.subplots()
     selector.ax.plot(spectrum.field, spectrum.intensity)
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative", return_value=(0.0, 1.0, 1.0, 0.0)
     ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True) as ask:
-        selector.fit_lorentzian()
+        selector.fit_lorentzian_peak1()
         fit.assert_called_once()
         ask.assert_called_once()
         assert len(selector.ax.lines) == 2
@@ -61,7 +62,7 @@ def test_lorentzian_fit_overlay():
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative", return_value=(0.0, 1.0, 1.0, 0.0)
     ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=False) as ask:
-        selector.fit_lorentzian()
+        selector.fit_lorentzian_peak2()
         fit.assert_called_once()
         ask.assert_called_once()
         assert len(selector.ax.lines) == 1

@@ -45,7 +45,8 @@ class SpanPeakSelector:
         self.ax = None
         self.tree: ttk.Treeview | None = None
         self.analyse_btn: tk.Button | None = None
-        self.fit_btn: tk.Button | None = None
+        self.fit_btn1: tk.Button | None = None
+        self.fit_btn2: tk.Button | None = None
         self.selector: SpanSelector | None = None
 
     # ------------------------------------------------------------------
@@ -114,13 +115,20 @@ class SpanPeakSelector:
         messagebox.showinfo("Peak analysis", "\n".join(lines))
 
     # ------------------------------------------------------------------
-    def fit_lorentzian(self) -> None:
-        """Fit a Lorentzian derivative line and optionally keep the overlay."""
+    def _fit_lorentzian(self, peak_idx: int) -> None:
+        """Fit a Lorentzian line to the selected peak and optionally keep it."""
 
         assert self.ax is not None
-        params = fit_lorentzian_derivative(
-            self.spectrum.field, self.spectrum.intensity
-        )
+
+        if len(self.ranges) > peak_idx:
+            start, end = self.ranges[peak_idx]
+            mask = (self.spectrum.field >= start) & (self.spectrum.field <= end)
+        else:
+            mask = slice(None)
+
+        field = self.spectrum.field[mask]
+        intensity = self.spectrum.intensity[mask]
+        params = fit_lorentzian_derivative(field, intensity)
 
         h_res, delta, A, B = params
 
@@ -131,8 +139,8 @@ class SpanPeakSelector:
             disp = delta * (delta**2 - x**2) / denom
             return A * sym + B * disp
 
-        fit = _model(self.spectrum.field, h_res, delta, A, B)
-        (line,) = self.ax.plot(self.spectrum.field, fit, label="Lorentzian fit")
+        fit = _model(field, h_res, delta, A, B)
+        (line,) = self.ax.plot(field, fit, label=f"Lorentzian fit peak {peak_idx + 1}")
         self.ax.legend()
         self.ax.figure.canvas.draw_idle()
 
@@ -147,6 +155,16 @@ class SpanPeakSelector:
         if not accept:
             line.remove()
             self.ax.figure.canvas.draw_idle()
+
+    def fit_lorentzian_peak1(self) -> None:
+        """Fit the Lorentzian model to the first peak."""
+
+        self._fit_lorentzian(0)
+
+    def fit_lorentzian_peak2(self) -> None:
+        """Fit the Lorentzian model to the second peak."""
+
+        self._fit_lorentzian(1)
 
     # ------------------------------------------------------------------
     def show(self) -> None:
@@ -176,8 +194,15 @@ class SpanPeakSelector:
         )
         self.analyse_btn.pack(padx=5, pady=5)
 
-        self.fit_btn = tk.Button(panel, text="Fit Lorentzian", command=self.fit_lorentzian)
-        self.fit_btn.pack(padx=5, pady=5)
+        self.fit_btn1 = tk.Button(
+            panel, text="Fit Lorentzian Peak 1", command=self.fit_lorentzian_peak1
+        )
+        self.fit_btn1.pack(padx=5, pady=5)
+
+        self.fit_btn2 = tk.Button(
+            panel, text="Fit Lorentzian Peak 2", command=self.fit_lorentzian_peak2
+        )
+        self.fit_btn2.pack(padx=5, pady=5)
 
         columns = ("pos_x", "pos_y", "neg_x", "neg_y", "fwhm")
         self.tree = ttk.Treeview(panel, columns=columns, show="headings", height=5)
