@@ -32,26 +32,29 @@ def test_span_selector_analysis():
     with patch("esr_lab.gui.find_peak", return_value=(1, 3)) as fp, \
         patch("esr_lab.gui.calc_fwhm", return_value=0.5) as cf, \
         patch("esr_lab.gui.messagebox.showinfo") as info:
+        selector.analysis_func = cf
         selector.onselect(1.0, 2.0)
-        selector.onselect(5.0, 8.0)
 
-        assert selector.ranges == [(1.0, 2.0), (5.0, 8.0)]
-        assert fp.call_count == 2
-        assert cf.call_count == 2
+        assert selector.ranges == [(1.0, 2.0)]
+        fp.assert_called_once()
+        cf.assert_called_once()
         info.assert_called_once()
 
 
-def test_peak_to_peak_slider_analysis():
+def test_peak_to_peak_analysis():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
-    selector.pos_peak = 1.0
-    selector.neg_peak = 3.0
 
-    with patch("esr_lab.gui.calc_peak_to_peak", return_value=2.0) as cpp, \
+    fig, selector.ax = plt.subplots()
+    with patch("esr_lab.gui.find_peak", return_value=(1, 3)) as fp, \
+        patch("esr_lab.gui.calc_peak_to_peak", return_value=2.0) as cpp, \
         patch("esr_lab.gui.messagebox.showinfo") as info:
-        selector.analyse_peak_to_peak()
+        selector.start_peak_to_peak()
+        selector.onselect(0.0, 4.0)
+        fp.assert_called_once()
         cpp.assert_called_once()
         info.assert_called_once()
+    plt.close(fig)
 
 
 def test_lorentzian_fit_overlay():
