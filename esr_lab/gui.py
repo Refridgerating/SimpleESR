@@ -303,6 +303,8 @@ class SpanPeakSelector:
         self.trace_var: tk.StringVar | None = None
         self.peak_slider: tk.Scale | None = None
         self.selected_peak: float | None = None
+        self.meta_label: tk.Label | None = None
+        self.metadata_text: str = ""
         # Keep track of which peak (1 or 2) the user is analysing.
         # Default to the first peak so headless usage remains functional
         # without invoking the interactive prompt.
@@ -599,6 +601,37 @@ class SpanPeakSelector:
                     ),
                 )
 
+    def _format_metadata(self, meta: dict[str, object] | None) -> str:
+        """Return a human readable string for the acquisition metadata."""
+
+        if not meta:
+            return ""
+
+        lines: list[str] = []
+        if (freq := meta.get("Frequency")) is not None:
+            lines.append(f"Frequency: {freq}")
+        if (mod := meta.get("Modulation")) is not None:
+            lines.append(f"Modulation: {mod}")
+        if (mod_f := meta.get("ModulationFreq")) is not None:
+            lines.append(f"Mod. Freq.: {mod_f}")
+        if (b_from := meta.get("Bfrom")) is not None and (b_to := meta.get("Bto")) is not None:
+            lines.append(f"B Sweep: {b_from}-{b_to}")
+        if (mw := meta.get("MicrowavePower")) is not None:
+            lines.append(f"MW Power: {mw}")
+        if (st := meta.get("SweepTime")) is not None:
+            lines.append(f"Sweep Time: {st}")
+        if (temp := meta.get("Temperature")) is not None:
+            lines.append(f"Temperature: {temp}")
+        return "\n".join(lines)
+
+    def _update_metadata_display(self) -> None:
+        """Update the metadata label for the currently selected spectrum."""
+
+        text = self._format_metadata(self.spectrum.metadata)
+        self.metadata_text = text
+        if self.meta_label is not None:
+            self.meta_label.config(text=text)
+
     def _on_trace_change(self, _event: object | None = None) -> None:
         """Update state when the user selects a different trace."""
 
@@ -624,6 +657,7 @@ class SpanPeakSelector:
             self.selected_peak = mid
 
         self._refresh_tables()
+        self._update_metadata_display()
 
     # ------------------------------------------------------------------
     def update_legend(self) -> None:
@@ -650,29 +684,9 @@ class SpanPeakSelector:
         panel = tk.Frame(self.root)
         panel.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Show acquisition metadata at the top of the analysis panel
-        if self.spectrum.metadata:
-            meta = self.spectrum.metadata
-            lines: list[str] = []
-            if (freq := meta.get("Frequency")) is not None:
-                lines.append(f"Frequency: {freq}")
-            if (mod := meta.get("Modulation")) is not None:
-                lines.append(f"Modulation: {mod}")
-            if (mod_f := meta.get("ModulationFreq")) is not None:
-                lines.append(f"Mod. Freq.: {mod_f}")
-            if (b_from := meta.get("Bfrom")) is not None and (
-                b_to := meta.get("Bto")
-            ) is not None:
-                lines.append(f"B Sweep: {b_from}-{b_to}")
-            if (mw := meta.get("MicrowavePower")) is not None:
-                lines.append(f"MW Power: {mw}")
-            if (st := meta.get("SweepTime")) is not None:
-                lines.append(f"Sweep Time: {st}")
-            if (temp := meta.get("Temperature")) is not None:
-                lines.append(f"Temperature: {temp}")
-            if lines:
-                meta_label = tk.Label(panel, text="\n".join(lines), justify=tk.LEFT)
-                meta_label.pack(padx=5, pady=5)
+        self.meta_label = tk.Label(panel, justify=tk.LEFT)
+        self.meta_label.pack(padx=5, pady=5)
+        self._update_metadata_display()
 
         fig, self.ax = plt.subplots()
         # Plot each spectrum to allow visual comparison.  Multiple traces are
