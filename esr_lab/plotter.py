@@ -62,6 +62,8 @@ def configure_subplot(
     font_size: Optional[float] = None,
     x_ticks: Optional[Sequence[float]] = None,
     y_ticks: Optional[Sequence[float]] = None,
+    major_grid: Optional[bool] = None,
+    minor_grid: Optional[bool] = None,
 ) -> None:
     """Configure common display properties of a Matplotlib subplot.
 
@@ -82,6 +84,8 @@ def configure_subplot(
         Font size for axis labels, tick labels and the title.
     x_ticks, y_ticks:
         Explicit tick locations for the respective axes.
+    major_grid, minor_grid:
+        Toggle visibility of major and minor grid lines.
     """
 
     # Line styling -------------------------------------------------------
@@ -111,3 +115,11 @@ def configure_subplot(
         ax.set_xticks(list(x_ticks))
     if y_ticks is not None:
         ax.set_yticks(list(y_ticks))
+
+    # Grid lines ---------------------------------------------------------
+    if major_grid is not None:
+        ax.grid(major_grid, which="major")
+    if minor_grid is not None:
+        if minor_grid:
+            ax.minorticks_on()
+        ax.grid(minor_grid, which="minor")

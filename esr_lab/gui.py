@@ -102,17 +102,31 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         lw_init = ax.lines[0].get_linewidth() if ax.lines else 1.0
         lw_ent = add_entry(7, "Line width", f"{lw_init}")
 
+        color_init = ax.lines[0].get_color() if ax.lines else ""
+        color_ent = add_entry(8, "Line color", color_init)
+
+        tk.Label(dialog, text="Marker").grid(row=9, column=0, sticky="e")
+        marker_init = ax.lines[0].get_marker() if ax.lines else "None"
+        marker_var = tk.StringVar(value=marker_init)
+        markers = ["None", "o", "s", "^", "D", "*", "x", "+"]
+        tk.OptionMenu(dialog, marker_var, *markers).grid(row=9, column=1, sticky="w")
+
         # Scale selection
-        tk.Label(dialog, text="X scale").grid(row=8, column=0, sticky="e")
+        tk.Label(dialog, text="X scale").grid(row=10, column=0, sticky="e")
         xscale_var = tk.StringVar(value=ax.get_xscale())
-        tk.OptionMenu(dialog, xscale_var, "linear", "log").grid(row=8, column=1, sticky="w")
+        tk.OptionMenu(dialog, xscale_var, "linear", "log").grid(row=10, column=1, sticky="w")
 
-        tk.Label(dialog, text="Y scale").grid(row=9, column=0, sticky="e")
+        tk.Label(dialog, text="Y scale").grid(row=11, column=0, sticky="e")
         yscale_var = tk.StringVar(value=ax.get_yscale())
-        tk.OptionMenu(dialog, yscale_var, "linear", "log").grid(row=9, column=1, sticky="w")
+        tk.OptionMenu(dialog, yscale_var, "linear", "log").grid(row=11, column=1, sticky="w")
 
-        xticks_ent = add_entry(10, "X ticks", ", ".join(map(str, ax.get_xticks())))
-        yticks_ent = add_entry(11, "Y ticks", ", ".join(map(str, ax.get_yticks())))
+        xticks_ent = add_entry(12, "X ticks", ", ".join(map(str, ax.get_xticks())))
+        yticks_ent = add_entry(13, "Y ticks", ", ".join(map(str, ax.get_yticks())))
+
+        major_var = tk.BooleanVar(value=ax.xaxis._major_tick_kw.get("gridOn", False))
+        tk.Checkbutton(dialog, text="Major grid", variable=major_var).grid(row=14, column=0, columnspan=2, sticky="w")
+        minor_var = tk.BooleanVar(value=ax.xaxis._minor_tick_kw.get("gridOn", False))
+        tk.Checkbutton(dialog, text="Minor grid", variable=minor_var).grid(row=15, column=0, columnspan=2, sticky="w")
 
         def apply() -> None:
             try:
@@ -141,6 +155,15 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             except ValueError:
                 pass
 
+            color_val = color_ent.get().strip()
+            if color_val:
+                for line in ax.lines:
+                    line.set_color(color_val)
+
+            marker_val = marker_var.get()
+            for line in ax.lines:
+                line.set_marker("" if marker_val == "None" else marker_val)
+
             ax.set_xscale(xscale_var.get())
             ax.set_yscale(yscale_var.get())
 
@@ -157,10 +180,17 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             except ValueError:
                 pass
 
+            ax.grid(major_var.get(), which="major")
+            if minor_var.get():
+                ax.minorticks_on()
+            else:
+                ax.minorticks_off()
+            ax.grid(minor_var.get(), which="minor")
+
             self.canvas.draw_idle()
             dialog.destroy()
 
-        tk.Button(dialog, text="Apply", command=apply).grid(row=12, column=0, columnspan=2, pady=5)
+        tk.Button(dialog, text="Apply", command=apply).grid(row=16, column=0, columnspan=2, pady=5)
 
 
 
