@@ -168,3 +168,14 @@ def test_toolbar_has_default_tools_without_subplots():
     assert "Pan" in tools and "Zoom" in tools
     assert "Edit" in tools
 
+
+def test_filter_ticks_respects_limits():
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_xticks(gui._filter_ticks([-50, 0, 10], 0, 10))
+    ax.set_ylim(0, 1)
+    ax.set_yticks(gui._filter_ticks([-1, 0, 1], 0, 1))
+    assert ax.get_xlim() == (0.0, 10.0)
+    assert ax.get_ylim() == (0.0, 1.0)
+    plt.close(fig)
+

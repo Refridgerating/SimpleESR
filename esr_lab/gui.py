@@ -28,6 +28,12 @@ from .analysis import (
 from .io import ESRLoader
 
 
+def _filter_ticks(ticks: list[float], lower: float, upper: float) -> list[float]:
+    """Return only tick locations within the provided axis limits."""
+
+    return [t for t in ticks if lower <= t <= upper]
+
+
 class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
     """Tk toolbar without the subplot configuration tool.
 
@@ -110,13 +116,19 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         def apply() -> None:
             try:
-                ax.set_xlim(float(xmin_ent.get()), float(xmax_ent.get()))
+                xmin_val = float(xmin_ent.get())
+                xmax_val = float(xmax_ent.get())
+                ax.set_xlim(xmin_val, xmax_val)
+                xmin_val, xmax_val = ax.get_xlim()
             except ValueError:
-                pass
+                xmin_val, xmax_val = ax.get_xlim()
             try:
-                ax.set_ylim(float(ymin_ent.get()), float(ymax_ent.get()))
+                ymin_val = float(ymin_ent.get())
+                ymax_val = float(ymax_ent.get())
+                ax.set_ylim(ymin_val, ymax_val)
+                ymin_val, ymax_val = ax.get_ylim()
             except ValueError:
-                pass
+                ymin_val, ymax_val = ax.get_ylim()
 
             ax.set_title(title_ent.get())
             ax.set_xlabel(xlabel_ent.get())
@@ -134,11 +146,13 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
             try:
                 ticks = [float(v) for v in xticks_ent.get().split(",") if v.strip()]
+                ticks = _filter_ticks(ticks, xmin_val, xmax_val)
                 ax.set_xticks(ticks)
             except ValueError:
                 pass
             try:
                 ticks = [float(v) for v in yticks_ent.get().split(",") if v.strip()]
+                ticks = _filter_ticks(ticks, ymin_val, ymax_val)
                 ax.set_yticks(ticks)
             except ValueError:
                 pass
