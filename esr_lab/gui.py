@@ -18,7 +18,12 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
 
-from .analysis import calc_fwhm, find_peak, fit_lorentzian_derivative
+from .analysis import (
+    calc_fwhm,
+    find_peak,
+    fit_lorentzian_derivative,
+    calc_peak_to_peak,
+)
 from .io import ESRLoader
 
 
@@ -48,6 +53,11 @@ class SpanPeakSelector:
         self.fit_btn: tk.Button | None = None
         self.peak_slider: tk.Scale | None = None
         self.selected_peak: float | None = None
+        self.pos_peak_slider: tk.Scale | None = None
+        self.neg_peak_slider: tk.Scale | None = None
+        self.pos_peak: float | None = None
+        self.neg_peak: float | None = None
+        self.dhpp_btn: tk.Button | None = None
         self.selector: SpanSelector | None = None
 
     # ------------------------------------------------------------------
@@ -123,6 +133,56 @@ class SpanPeakSelector:
             self.selected_peak = float(value)
         except ValueError:
             self.selected_peak = None
+
+    def _update_pos_peak(self, value: str) -> None:
+        """Store the user-chosen position of the positive peak."""
+
+        try:
+            self.pos_peak = float(value)
+        except ValueError:
+            self.pos_peak = None
+
+    def _update_neg_peak(self, value: str) -> None:
+        """Store the user-chosen position of the negative peak."""
+
+        try:
+            self.neg_peak = float(value)
+        except ValueError:
+            self.neg_peak = None
+
+    # ------------------------------------------------------------------
+    def analyse_peak_to_peak(self) -> None:
+        r"""Determine :math:`\Delta H_{pp}` using the peak sliders."""
+
+        if self.pos_peak is None or self.neg_peak is None:
+            messagebox.showwarning("Peak analysis", "Select both peaks")
+            return
+
+        field = self.spectrum.field
+        intensity = self.spectrum.intensity
+        pos_idx = int(np.abs(field - self.pos_peak).argmin())
+        neg_idx = int(np.abs(field - self.neg_peak).argmin())
+        dhpp = calc_peak_to_peak(field, intensity, pos_idx, neg_idx)
+
+        pos_field = field[pos_idx]
+        pos_y = intensity[pos_idx]
+        neg_field = field[neg_idx]
+        neg_y = intensity[neg_idx]
+
+        if self.tree is not None:
+            self.tree.insert(
+                "",
+                tk.END,
+                values=(
+                    f"{pos_field:.3f}",
+                    f"{pos_y:.3f}",
+                    f"{neg_field:.3f}",
+                    f"{neg_y:.3f}",
+                    f"{dhpp:.3f}",
+                ),
+            )
+
+        messagebox.showinfo("Peak analysis", f"\u0394H_pp={dhpp:.3f}")
 
     # ------------------------------------------------------------------
     def _fit_lorentzian(self) -> None:
@@ -223,6 +283,36 @@ class SpanPeakSelector:
 
         field_min = float(np.min(self.spectrum.field))
         field_max = float(np.max(self.spectrum.field))
+
+        self.pos_peak_slider = tk.Scale(
+            panel,
+            from_=field_min,
+            to=field_max,
+            orient=tk.HORIZONTAL,
+            label="Pos peak",
+            command=self._update_pos_peak,
+        )
+        self.pos_peak_slider.set(field_min)
+        self.pos_peak = field_min
+        self.pos_peak_slider.pack(fill=tk.X, padx=5, pady=5)
+
+        self.neg_peak_slider = tk.Scale(
+            panel,
+            from_=field_min,
+            to=field_max,
+            orient=tk.HORIZONTAL,
+            label="Neg peak",
+            command=self._update_neg_peak,
+        )
+        self.neg_peak_slider.set(field_max)
+        self.neg_peak = field_max
+        self.neg_peak_slider.pack(fill=tk.X, padx=5, pady=5)
+
+        self.dhpp_btn = tk.Button(
+            panel, text="Analyse \u0394H_pp", command=self.analyse_peak_to_peak
+        )
+        self.dhpp_btn.pack(padx=5, pady=5)
+
         self.peak_slider = tk.Scale(
             panel,
             from_=field_min,

@@ -41,6 +41,19 @@ def test_span_selector_analysis():
         info.assert_called_once()
 
 
+def test_peak_to_peak_slider_analysis():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.pos_peak = 1.0
+    selector.neg_peak = 3.0
+
+    with patch("esr_lab.gui.calc_peak_to_peak", return_value=2.0) as cpp, \
+        patch("esr_lab.gui.messagebox.showinfo") as info:
+        selector.analyse_peak_to_peak()
+        cpp.assert_called_once()
+        info.assert_called_once()
+
+
 def test_lorentzian_fit_overlay():
     spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)

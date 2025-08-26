@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from esr_lab import find_peak, calc_fwhm, fit_lorentzian_derivative
+from esr_lab import (
+    find_peak,
+    calc_fwhm,
+    fit_lorentzian_derivative,
+    calc_peak_to_peak,
+)
 
 
 def test_find_peak_pair():
@@ -20,6 +25,16 @@ def test_calc_fwhm_from_peaks():
 
     pos_idx, neg_idx = find_peak(field, intensity, -2, 2)
     width = calc_fwhm(field, intensity, pos_idx, neg_idx)
+
+    assert np.isclose(width, 2.0, atol=1e-3)
+
+
+def test_calc_peak_to_peak_from_peaks():
+    field = np.linspace(-5, 5, 10001)
+    intensity = field * np.exp(-field**2 / 2)
+
+    pos_idx, neg_idx = find_peak(field, intensity, -2, 2)
+    width = calc_peak_to_peak(field, intensity, pos_idx, neg_idx)
 
     assert np.isclose(width, 2.0, atol=1e-3)
 
