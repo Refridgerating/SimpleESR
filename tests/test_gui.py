@@ -77,6 +77,43 @@ def test_peak_to_peak_analysis():
     plt.close(fig)
 
 
+def test_results_persist_across_analyses():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+
+    with patch("esr_lab.gui.find_peak", return_value=(1, 3)) as fp, \
+        patch("esr_lab.gui.calc_fwhm", return_value=0.5) as cf, \
+        patch("esr_lab.gui.calc_peak_to_peak", return_value=2.0) as cpp, \
+        patch("esr_lab.gui.messagebox.showinfo"):
+        selector.start_analysis(analysis_func=cf)
+        selector.onselect(1.0, 2.0)
+        selector.start_peak_to_peak()
+        selector.onselect(0.0, 4.0)
+        assert fp.call_count == 2
+        cf.assert_called_once()
+        cpp.assert_called_once()
+        assert selector.results == [
+            {
+                "analysis": "FWHM",
+                "pos_x": 1.0,
+                "pos_y": 0.0,
+                "neg_x": 3.0,
+                "neg_y": 0.0,
+                "width": 0.5,
+            },
+            {
+                "analysis": "\u0394H_pp",
+                "pos_x": 1.0,
+                "pos_y": 0.0,
+                "neg_x": 3.0,
+                "neg_y": 0.0,
+                "width": 2.0,
+            },
+        ]
+    plt.close(fig)
+
+
 def test_lorentzian_fit_overlay():
     spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
