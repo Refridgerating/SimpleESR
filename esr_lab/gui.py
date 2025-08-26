@@ -45,8 +45,9 @@ class SpanPeakSelector:
         self.ax = None
         self.tree: ttk.Treeview | None = None
         self.analyse_btn: tk.Button | None = None
-        self.fit_btn1: tk.Button | None = None
-        self.fit_btn2: tk.Button | None = None
+        self.fit_btn: tk.Button | None = None
+        self.peak_slider: tk.Scale | None = None
+        self.selected_peak: float | None = None
         self.selector: SpanSelector | None = None
 
     # ------------------------------------------------------------------
@@ -115,15 +116,32 @@ class SpanPeakSelector:
         messagebox.showinfo("Peak analysis", "\n".join(lines))
 
     # ------------------------------------------------------------------
-    def _fit_lorentzian(self, peak_idx: int) -> None:
-        """Fit a Lorentzian line to the selected peak and optionally keep it."""
+    def _update_selected_peak(self, value: str) -> None:
+        """Update the stored peak position from the slider."""
+
+        try:
+            self.selected_peak = float(value)
+        except ValueError:
+            self.selected_peak = None
+
+    # ------------------------------------------------------------------
+    def _fit_lorentzian(self) -> None:
+        """Fit a Lorentzian line near the selected peak and optionally keep it."""
 
         assert self.ax is not None
 
-        if len(self.ranges) > peak_idx:
-            start, end = self.ranges[peak_idx]
-            mask = (self.spectrum.field >= start) & (self.spectrum.field <= end)
-        else:
+        if self.selected_peak is None:
+            messagebox.showwarning("Lorentzian Fit", "No peak selected")
+            return
+
+        field_min = float(np.min(self.spectrum.field))
+        field_max = float(np.max(self.spectrum.field))
+        window = (field_max - field_min) * 0.05
+        start = self.selected_peak - window / 2
+        end = self.selected_peak + window / 2
+
+        mask = (self.spectrum.field >= start) & (self.spectrum.field <= end)
+        if not np.any(mask):
             mask = slice(None)
 
         field = self.spectrum.field[mask]
@@ -140,7 +158,7 @@ class SpanPeakSelector:
             return A * sym + B * disp
 
         fit = _model(field, h_res, delta, A, B)
-        (line,) = self.ax.plot(field, fit, label=f"Lorentzian fit peak {peak_idx + 1}")
+        (line,) = self.ax.plot(field, fit, label=f"Lorentzian fit at {self.selected_peak:.3f}")
         self.ax.legend()
         self.ax.figure.canvas.draw_idle()
 
@@ -156,15 +174,10 @@ class SpanPeakSelector:
             line.remove()
             self.ax.figure.canvas.draw_idle()
 
-    def fit_lorentzian_peak1(self) -> None:
-        """Fit the Lorentzian model to the first peak."""
+    def fit_lorentzian(self) -> None:
+        """Fit the Lorentzian model to the peak chosen via the slider."""
 
-        self._fit_lorentzian(0)
-
-    def fit_lorentzian_peak2(self) -> None:
-        """Fit the Lorentzian model to the second peak."""
-
-        self._fit_lorentzian(1)
+        self._fit_lorentzian()
 
     # ------------------------------------------------------------------
     def show(self) -> None:
@@ -194,15 +207,25 @@ class SpanPeakSelector:
         )
         self.analyse_btn.pack(padx=5, pady=5)
 
-        self.fit_btn1 = tk.Button(
-            panel, text="Fit Lorentzian Peak 1", command=self.fit_lorentzian_peak1
+        field_min = float(np.min(self.spectrum.field))
+        field_max = float(np.max(self.spectrum.field))
+        self.peak_slider = tk.Scale(
+            panel,
+            from_=field_min,
+            to=field_max,
+            orient=tk.HORIZONTAL,
+            label="Peak position",
+            command=self._update_selected_peak,
         )
-        self.fit_btn1.pack(padx=5, pady=5)
+        mid = (field_min + field_max) / 2
+        self.peak_slider.set(mid)
+        self.selected_peak = mid
+        self.peak_slider.pack(fill=tk.X, padx=5, pady=5)
 
-        self.fit_btn2 = tk.Button(
-            panel, text="Fit Lorentzian Peak 2", command=self.fit_lorentzian_peak2
+        self.fit_btn = tk.Button(
+            panel, text="Fit Lorentzian", command=self.fit_lorentzian
         )
-        self.fit_btn2.pack(padx=5, pady=5)
+        self.fit_btn.pack(padx=5, pady=5)
 
         columns = ("pos_x", "pos_y", "neg_x", "neg_y", "fwhm")
         self.tree = ttk.Treeview(panel, columns=columns, show="headings", height=5)
