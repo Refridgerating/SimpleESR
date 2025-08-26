@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
+from typing import Callable
 
 from .analysis import (
     calc_fwhm,
@@ -50,24 +51,28 @@ class SpanPeakSelector:
         self.ax = None
         self.tree: ttk.Treeview | None = None
         self.analyse_btn: tk.Button | None = None
+        self.dhpp_btn: tk.Button | None = None
         self.fit_btn: tk.Button | None = None
         self.peak_slider: tk.Scale | None = None
         self.selected_peak: float | None = None
-        self.pos_peak_slider: tk.Scale | None = None
-        self.neg_peak_slider: tk.Scale | None = None
-        self.pos_peak: float | None = None
-        self.neg_peak: float | None = None
-        self.dhpp_btn: tk.Button | None = None
         self.selector: SpanSelector | None = None
+        self.analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm
+        self.analysis_label: str = "FWHM"
 
     # ------------------------------------------------------------------
-    def start_analysis(self) -> None:
+    def start_analysis(
+        self,
+        analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm,
+        label: str = "FWHM",
+    ) -> None:
         """Enable span selection and prepare for analysis."""
 
         if self.tree is not None:
             for row in self.tree.get_children():
                 self.tree.delete(row)
         self.ranges.clear()
+        self.analysis_func = analysis_func
+        self.analysis_label = label
         if self.selector is not None:
             self.selector.disconnect_events()
         assert self.ax is not None
@@ -76,6 +81,13 @@ class SpanPeakSelector:
         )
         if self.analyse_btn is not None:
             self.analyse_btn.config(state=tk.DISABLED)
+        if self.dhpp_btn is not None:
+            self.dhpp_btn.config(state=tk.DISABLED)
+
+    def start_peak_to_peak(self) -> None:
+        """Start interactive \u0394H_pp analysis using span selection."""
+
+        self.start_analysis(calc_peak_to_peak, "\u0394H_pp")
 
     # ------------------------------------------------------------------
     def onselect(self, xmin: float, xmax: float) -> None:
@@ -83,8 +95,6 @@ class SpanPeakSelector:
 
         start, end = sorted((xmin, xmax))
         self.ranges.append((start, end))
-        if len(self.ranges) < 2:
-            return
 
         if self.selector is not None:
             self.selector.disconnect_events()
@@ -94,7 +104,7 @@ class SpanPeakSelector:
             pos_idx, neg_idx = find_peak(
                 self.spectrum.field, self.spectrum.intensity, start, end
             )
-            fwhm = calc_fwhm(
+            width = self.analysis_func(
                 self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
             )
             pos_field = self.spectrum.field[pos_idx]
@@ -111,16 +121,18 @@ class SpanPeakSelector:
                         f"{pos_y:.3f}",
                         f"{neg_field:.3f}",
                         f"{neg_y:.3f}",
-                        f"{fwhm:.3f}",
+                        f"{width:.3f}",
                     ),
                 )
 
             lines.append(
-                f"Absorption: pos={pos_field:.3f}, neg={neg_field:.3f}, FWHM={fwhm:.3f}"
+                f"Absorption: pos={pos_field:.3f}, neg={neg_field:.3f}, {self.analysis_label}={width:.3f}"
             )
 
         if self.analyse_btn is not None:
             self.analyse_btn.config(state=tk.NORMAL)
+        if self.dhpp_btn is not None:
+            self.dhpp_btn.config(state=tk.NORMAL)
 
         # Maintain backwards-compatible notification for the tests
         messagebox.showinfo("Peak analysis", "\n".join(lines))
@@ -133,56 +145,6 @@ class SpanPeakSelector:
             self.selected_peak = float(value)
         except ValueError:
             self.selected_peak = None
-
-    def _update_pos_peak(self, value: str) -> None:
-        """Store the user-chosen position of the positive peak."""
-
-        try:
-            self.pos_peak = float(value)
-        except ValueError:
-            self.pos_peak = None
-
-    def _update_neg_peak(self, value: str) -> None:
-        """Store the user-chosen position of the negative peak."""
-
-        try:
-            self.neg_peak = float(value)
-        except ValueError:
-            self.neg_peak = None
-
-    # ------------------------------------------------------------------
-    def analyse_peak_to_peak(self) -> None:
-        r"""Determine :math:`\Delta H_{pp}` using the peak sliders."""
-
-        if self.pos_peak is None or self.neg_peak is None:
-            messagebox.showwarning("Peak analysis", "Select both peaks")
-            return
-
-        field = self.spectrum.field
-        intensity = self.spectrum.intensity
-        pos_idx = int(np.abs(field - self.pos_peak).argmin())
-        neg_idx = int(np.abs(field - self.neg_peak).argmin())
-        dhpp = calc_peak_to_peak(field, intensity, pos_idx, neg_idx)
-
-        pos_field = field[pos_idx]
-        pos_y = intensity[pos_idx]
-        neg_field = field[neg_idx]
-        neg_y = intensity[neg_idx]
-
-        if self.tree is not None:
-            self.tree.insert(
-                "",
-                tk.END,
-                values=(
-                    f"{pos_field:.3f}",
-                    f"{pos_y:.3f}",
-                    f"{neg_field:.3f}",
-                    f"{neg_y:.3f}",
-                    f"{dhpp:.3f}",
-                ),
-            )
-
-        messagebox.showinfo("Peak analysis", f"\u0394H_pp={dhpp:.3f}")
 
     # ------------------------------------------------------------------
     def _fit_lorentzian(self) -> None:
@@ -305,37 +267,13 @@ class SpanPeakSelector:
         )
         self.analyse_btn.pack(padx=5, pady=5)
 
-        field_min = float(np.min(self.spectrum.field))
-        field_max = float(np.max(self.spectrum.field))
-
-        self.pos_peak_slider = tk.Scale(
-            panel,
-            from_=field_min,
-            to=field_max,
-            orient=tk.HORIZONTAL,
-            label="Pos peak",
-            command=self._update_pos_peak,
-        )
-        self.pos_peak_slider.set(field_min)
-        self.pos_peak = field_min
-        self.pos_peak_slider.pack(fill=tk.X, padx=5, pady=5)
-
-        self.neg_peak_slider = tk.Scale(
-            panel,
-            from_=field_min,
-            to=field_max,
-            orient=tk.HORIZONTAL,
-            label="Neg peak",
-            command=self._update_neg_peak,
-        )
-        self.neg_peak_slider.set(field_max)
-        self.neg_peak = field_max
-        self.neg_peak_slider.pack(fill=tk.X, padx=5, pady=5)
-
         self.dhpp_btn = tk.Button(
-            panel, text="Analyse \u0394H_pp", command=self.analyse_peak_to_peak
+            panel, text="Analyse \u0394H_pp", command=self.start_peak_to_peak
         )
         self.dhpp_btn.pack(padx=5, pady=5)
+
+        field_min = float(np.min(self.spectrum.field))
+        field_max = float(np.max(self.spectrum.field))
 
         self.peak_slider = tk.Scale(
             panel,
