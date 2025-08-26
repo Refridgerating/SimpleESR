@@ -37,12 +37,24 @@ class ESRLoader:
         with path.open("r", encoding="utf-8-sig") as f:
             lines = f.readlines()
 
-        # Find the beginning of the measurement block.
+        # Find the beginning of the measurement block and collect metadata
+        # lines appearing before it.
         data_start = None
+        metadata: dict[str, object] = {}
         for idx, line in enumerate(lines):
-            if line.strip().startswith("BField"):
+            stripped = line.strip()
+            if stripped.startswith("BField"):
                 data_start = idx
                 break
+            # Parse simple ``key;value`` pairs from the header
+            parts = [p.strip() for p in stripped.split(";")]
+            if len(parts) >= 2 and parts[0]:
+                key, value = parts[0], parts[1]
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+                metadata[key] = value
 
         if data_start is not None:
             # Parse only the measurement block using a fixed semicolon
@@ -64,5 +76,7 @@ class ESRLoader:
         df = df.iloc[:, :2].copy()
         df.columns = ["BField [mT]", "MW_Absorption []"]
 
-        return ESRSpectrum.from_dataframe(df)
+        return ESRSpectrum.from_dataframe(
+            df, metadata=metadata if metadata else None
+        )
 
