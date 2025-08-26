@@ -504,6 +504,8 @@ class SpanPeakSelector:
         }
         for col, text in headings.items():
             self.tree.heading(col, text=text)
+            # Center values in each column for improved readability
+            self.tree.column(col, anchor=tk.CENTER)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         lorentz_columns = ("peak", "h_res", "delta", "A", "B")
@@ -519,6 +521,8 @@ class SpanPeakSelector:
         }
         for col, text in lorentz_headings.items():
             self.lorentz_tree.heading(col, text=text)
+            # Center Lorentzian fit results to keep the table consistent
+            self.lorentz_tree.column(col, anchor=tk.CENTER)
         self.lorentz_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.root.mainloop()
