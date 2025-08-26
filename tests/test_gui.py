@@ -17,7 +17,7 @@ def test_gui_main(monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr(gui.tk, "Tk", lambda: DummyTk())
-    monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kwargs: str(csv_file))
+    monkeypatch.setattr(gui.filedialog, "askopenfilenames", lambda **kwargs: [str(csv_file)])
 
     with patch("esr_lab.gui.SpanPeakSelector") as selector_mock:
         gui.main()
@@ -114,6 +114,38 @@ def test_results_persist_across_analyses():
     plt.close(fig)
 
 
+def test_multi_trace_results_isolated():
+    spec1 = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))
+    selector = gui.SpanPeakSelector([spec1, spec2], labels=["one", "two"])
+    fig, selector.ax = plt.subplots()
+
+    tree = MagicMock()
+    tree.get_children.return_value = []
+    selector.tree = tree
+    ltree = MagicMock()
+    ltree.get_children.return_value = []
+    selector.lorentz_tree = ltree
+
+    selector.peak_slider = MagicMock()
+
+    with patch("esr_lab.gui.find_peak", return_value=(1, 3)), \
+        patch("esr_lab.gui.calc_fwhm", return_value=0.5), \
+        patch("esr_lab.gui.messagebox.showinfo"):
+        selector.start_analysis()
+        selector.onselect(1.0, 2.0)
+
+        # switch to second trace
+        selector.trace_var = MagicMock(get=lambda: "two")
+        selector._on_trace_change()
+        selector.start_analysis()
+        selector.onselect(1.0, 2.0)
+
+    assert len(selector.results_all[0]) == 1
+    assert len(selector.results_all[1]) == 1
+    plt.close(fig)
+
+
 def test_lorentzian_fit_overlay():
     spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
@@ -197,6 +229,9 @@ def test_table_columns_centered(monkeypatch):
 
         def pack(self, *args, **kwargs):
             pass
+
+        def get_children(self):
+            return []
 
     class DummyFrame:
         def pack(self, *args, **kwargs):
