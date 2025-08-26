@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from unittest.mock import patch
 
 from esr_lab import gui
@@ -38,4 +39,31 @@ def test_span_selector_analysis():
         assert fp.call_count == 2
         assert cf.call_count == 2
         info.assert_called_once()
+
+
+def test_lorentzian_fit_overlay():
+    spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+
+    fig, selector.ax = plt.subplots()
+    selector.ax.plot(spectrum.field, spectrum.intensity)
+    with patch(
+        "esr_lab.gui.fit_lorentzian_derivative", return_value=(0.0, 1.0, 1.0, 0.0)
+    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True) as ask:
+        selector.fit_lorentzian()
+        fit.assert_called_once()
+        ask.assert_called_once()
+        assert len(selector.ax.lines) == 2
+    plt.close(fig)
+
+    fig, selector.ax = plt.subplots()
+    selector.ax.plot(spectrum.field, spectrum.intensity)
+    with patch(
+        "esr_lab.gui.fit_lorentzian_derivative", return_value=(0.0, 1.0, 1.0, 0.0)
+    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=False) as ask:
+        selector.fit_lorentzian()
+        fit.assert_called_once()
+        ask.assert_called_once()
+        assert len(selector.ax.lines) == 1
+    plt.close(fig)
 
