@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, colorchooser
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -103,7 +103,33 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         lw_ent = add_entry(7, "Line width", f"{lw_init}")
 
         color_init = ax.lines[0].get_color() if ax.lines else ""
-        color_ent = add_entry(8, "Line color", color_init)
+        tk.Label(dialog, text="Line color").grid(row=8, column=0, sticky="e")
+        color_frame = tk.Frame(dialog)
+        color_frame.grid(row=8, column=1, padx=5, pady=2, sticky="w")
+        color_ent = tk.Entry(color_frame)
+        color_ent.insert(0, color_init)
+        color_ent.grid(row=0, column=0)
+
+        preview = tk.Canvas(color_frame, width=20, height=20, bg=color_init)
+        preview.grid(row=0, column=1, padx=5)
+
+        def choose_color() -> None:
+            color = colorchooser.askcolor(color_ent.get())[1]
+            if color:
+                color_ent.delete(0, tk.END)
+                color_ent.insert(0, color)
+                preview.config(bg=color)
+
+        tk.Button(color_frame, text="Pick", command=choose_color).grid(row=0, column=2, padx=5)
+
+        def _update_preview(*_args: object) -> None:
+            color_val = color_ent.get().strip()
+            try:
+                preview.config(bg=color_val)
+            except tk.TclError:
+                pass
+
+        color_ent.bind("<KeyRelease>", _update_preview)
 
         tk.Label(dialog, text="Marker").grid(row=9, column=0, sticky="e")
         marker_init = ax.lines[0].get_marker() if ax.lines else "None"
