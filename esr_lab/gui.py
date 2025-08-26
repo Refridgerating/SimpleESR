@@ -298,6 +298,7 @@ class SpanPeakSelector:
         self.analyse_btn: tk.Button | None = None
         self.dhpp_btn: tk.Button | None = None
         self.fit_btn: tk.Button | None = None
+        self.legend_btn: tk.Button | None = None
         self.trace_combo: ttk.Combobox | None = None
         self.trace_var: tk.StringVar | None = None
         self.peak_slider: tk.Scale | None = None
@@ -625,6 +626,19 @@ class SpanPeakSelector:
         self._refresh_tables()
 
     # ------------------------------------------------------------------
+    def update_legend(self) -> None:
+        """Redraw the legend to reflect current line styles."""
+
+        if self.ax is None or len(self.spectra) <= 1:
+            return
+
+        for line, label in zip(self.ax.lines[: len(self.spectra)], self.labels):
+            line.set_label(label)
+
+        self.ax.legend()
+        self.ax.figure.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
     def show(self) -> None:
         """Start the Tkinter main loop and display the analysis GUI."""
 
@@ -691,6 +705,11 @@ class SpanPeakSelector:
             )
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(padx=5, pady=5)
+
+            self.legend_btn = tk.Button(
+                panel, text="Update Legend", command=self.update_legend
+            )
+            self.legend_btn.pack(padx=5, pady=5)
 
         self.analyse_btn = tk.Button(
             panel, text="Analyse FWHM", command=self.start_analysis
