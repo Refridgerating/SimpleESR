@@ -15,6 +15,7 @@ def test_gui_main(monkeypatch, tmp_path):
         def withdraw(self):
             pass
 
+    monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(gui.tk, "Tk", lambda: DummyTk())
     monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kwargs: str(csv_file))
 

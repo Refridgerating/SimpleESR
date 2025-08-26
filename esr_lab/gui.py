@@ -10,15 +10,134 @@ are shown in a small table on the right hand side of the window.
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import sys
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib import widgets
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
-import matplotlib.pyplot as plt
 
 from .analysis import calc_fwhm, find_peak
 from .io import ESRLoader
+
+
+def has_display() -> bool:
+    """Return ``True`` if a graphical display is available."""
+
+    if sys.platform.startswith("win"):
+        return True
+    return bool(os.environ.get("DISPLAY"))
+
+
+class FormatSubplotDialog(tk.Toplevel):
+    """Dialog with *Format* and *Subplots* tabs."""
+
+    def __init__(self, canvas: FigureCanvasTkAgg, initial: str = "Format") -> None:
+        super().__init__()
+        self.canvas = canvas
+        self.title("Figure options")
+        nb = ttk.Notebook(self)
+        self.notebook = nb
+        fmt_frame = ttk.Frame(nb)
+        sub_frame = ttk.Frame(nb)
+        nb.add(fmt_frame, text="Format")
+        nb.add(sub_frame, text="Subplots")
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        ax = canvas.figure.axes[0]
+        self.title_var = tk.StringVar(value=ax.get_title())
+        self.xlabel_var = tk.StringVar(value=ax.get_xlabel())
+        self.ylabel_var = tk.StringVar(value=ax.get_ylabel())
+
+        ttk.Label(fmt_frame, text="Title").grid(row=0, column=0, sticky="w")
+        ttk.Entry(fmt_frame, textvariable=self.title_var).grid(
+            row=0, column=1, padx=5, pady=2, sticky="ew"
+        )
+        ttk.Label(fmt_frame, text="X Label").grid(row=1, column=0, sticky="w")
+        ttk.Entry(fmt_frame, textvariable=self.xlabel_var).grid(
+            row=1, column=1, padx=5, pady=2, sticky="ew"
+        )
+        ttk.Label(fmt_frame, text="Y Label").grid(row=2, column=0, sticky="w")
+        ttk.Entry(fmt_frame, textvariable=self.ylabel_var).grid(
+            row=2, column=1, padx=5, pady=2, sticky="ew"
+        )
+        fmt_frame.columnconfigure(1, weight=1)
+        ttk.Button(fmt_frame, text="Apply", command=self.apply_format).grid(
+            row=3, column=0, columnspan=2, pady=5
+        )
+
+        self._subplot_vars: dict[str, tk.DoubleVar] = {}
+        params = canvas.figure.subplotpars
+        names = ["left", "bottom", "right", "top", "wspace", "hspace"]
+        self._subplot_init = {name: getattr(params, name) for name in names}
+        for i, name in enumerate(names):
+            var = tk.DoubleVar(value=self._subplot_init[name])
+            self._subplot_vars[name] = var
+            ttk.Label(sub_frame, text=name.title()).grid(row=i, column=0, sticky="w")
+            ttk.Scale(
+                sub_frame,
+                from_=0.0,
+                to=1.0,
+                variable=var,
+                command=self._apply_subplots,
+            ).grid(row=i, column=1, padx=5, pady=2, sticky="ew")
+        sub_frame.columnconfigure(1, weight=1)
+        ttk.Button(sub_frame, text="Reset", command=self._reset_subplots).grid(
+            row=len(names), column=0, columnspan=2, pady=5
+        )
+
+        nb.select(0 if initial == "Format" else 1)
+
+    def apply_format(self) -> None:
+        ax = self.canvas.figure.axes[0]
+        ax.set_title(self.title_var.get())
+        ax.set_xlabel(self.xlabel_var.get())
+        ax.set_ylabel(self.ylabel_var.get())
+        self.canvas.draw_idle()
+
+    def _apply_subplots(self, _=None) -> None:
+        params = {name: var.get() for name, var in self._subplot_vars.items()}
+        self.canvas.figure.subplots_adjust(**params)
+        self.canvas.draw_idle()
+
+    def _reset_subplots(self) -> None:
+        for name, val in self._subplot_init.items():
+            self._subplot_vars[name].set(val)
+        self._apply_subplots()
+
+
+class FormattingToolbar(NavigationToolbar2Tk):
+    """Navigation toolbar with a combined format/subplot dialog."""
+
+    toolitems = (
+        NavigationToolbar2Tk.toolitems[:-2]
+        + (
+            (
+                "Format",
+                "Edit axis labels and title",
+                "qt4_editor_options",
+                "edit_format",
+            ),
+        )
+        + NavigationToolbar2Tk.toolitems[-2:]
+    )
+
+    def _open_dialog(self, tab: str) -> None:
+        if hasattr(self, "_dialog") and self._dialog.winfo_exists():
+            self._dialog.notebook.select(0 if tab == "Format" else 1)
+            self._dialog.lift()
+        else:
+            self._dialog = FormatSubplotDialog(self.canvas, tab)
+
+    def edit_format(self) -> None:
+        self._open_dialog("Format")
+
+    def configure_subplots(self) -> None:  # type: ignore[override]
+        self._open_dialog("Subplots")
 
 
 class SpanPeakSelector:
@@ -114,6 +233,11 @@ class SpanPeakSelector:
     # ------------------------------------------------------------------
     def show(self) -> None:
         """Start the Tkinter main loop and display the analysis GUI."""
+        if not has_display():
+            raise RuntimeError(
+                "No display found. Set the DISPLAY environment variable or run this "
+                "program within a virtual display (e.g., using xvfb-run)."
+            )
 
         self.root = tk.Tk()
         self.root.title("ESR Spectrum")
@@ -129,7 +253,7 @@ class SpanPeakSelector:
         self.ax.set_ylabel("Intensity")
         canvas = FigureCanvasTkAgg(fig, master=plot_frame)
         canvas.draw()
-        toolbar = NavigationToolbar2Tk(canvas, plot_frame, pack_toolbar=False)
+        toolbar = FormattingToolbar(canvas, plot_frame, pack_toolbar=False)
         toolbar.update()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         toolbar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -155,6 +279,11 @@ class SpanPeakSelector:
 
 def main() -> None:
     """Launch a file selection dialog and start the analyser."""
+    if not has_display():
+        raise RuntimeError(
+            "No display found. Set the DISPLAY environment variable or run this "
+            "program within a virtual display (e.g., using xvfb-run)."
+        )
 
     root = tk.Tk()
     root.withdraw()  # Hide the root window for the file dialog
