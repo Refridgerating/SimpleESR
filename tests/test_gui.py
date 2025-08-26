@@ -39,6 +39,16 @@ def test_span_selector_analysis():
         fp.assert_called_once()
         cf.assert_called_once()
         info.assert_called_once()
+        assert selector.results == [
+            {
+                "analysis": "FWHM",
+                "pos_x": 1.0,
+                "pos_y": 0.0,
+                "neg_x": 3.0,
+                "neg_y": 0.0,
+                "width": 0.5,
+            }
+        ]
 
 
 def test_peak_to_peak_analysis():
@@ -54,6 +64,16 @@ def test_peak_to_peak_analysis():
         fp.assert_called_once()
         cpp.assert_called_once()
         info.assert_called_once()
+        assert selector.results == [
+            {
+                "analysis": "\u0394H_pp",
+                "pos_x": 1.0,
+                "pos_y": 0.0,
+                "neg_x": 3.0,
+                "neg_y": 0.0,
+                "width": 2.0,
+            }
+        ]
     plt.close(fig)
 
 

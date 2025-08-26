@@ -58,6 +58,8 @@ class SpanPeakSelector:
         self.selector: SpanSelector | None = None
         self.analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm
         self.analysis_label: str = "FWHM"
+        # Store analysed peak data for optional export
+        self.results: list[dict[str, float | str]] = []
 
     # ------------------------------------------------------------------
     def start_analysis(
@@ -70,7 +72,10 @@ class SpanPeakSelector:
         if self.tree is not None:
             for row in self.tree.get_children():
                 self.tree.delete(row)
+            if "width" in self.tree["columns"]:
+                self.tree.heading("width", text=label)
         self.ranges.clear()
+        self.results.clear()
         self.analysis_func = analysis_func
         self.analysis_label = label
         if self.selector is not None:
@@ -99,35 +104,45 @@ class SpanPeakSelector:
         if self.selector is not None:
             self.selector.disconnect_events()
 
-        lines = []
-        for start, end in self.ranges:
-            pos_idx, neg_idx = find_peak(
-                self.spectrum.field, self.spectrum.intensity, start, end
-            )
-            width = self.analysis_func(
-                self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
-            )
-            pos_field = self.spectrum.field[pos_idx]
-            pos_y = self.spectrum.intensity[pos_idx]
-            neg_field = self.spectrum.field[neg_idx]
-            neg_y = self.spectrum.intensity[neg_idx]
+        pos_idx, neg_idx = find_peak(
+            self.spectrum.field, self.spectrum.intensity, start, end
+        )
+        width = self.analysis_func(
+            self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
+        )
+        pos_field = self.spectrum.field[pos_idx]
+        pos_y = self.spectrum.intensity[pos_idx]
+        neg_field = self.spectrum.field[neg_idx]
+        neg_y = self.spectrum.intensity[neg_idx]
 
-            if self.tree is not None:
-                self.tree.insert(
-                    "",
-                    tk.END,
-                    values=(
-                        f"{pos_field:.3f}",
-                        f"{pos_y:.3f}",
-                        f"{neg_field:.3f}",
-                        f"{neg_y:.3f}",
-                        f"{width:.3f}",
-                    ),
-                )
+        result = {
+            "analysis": self.analysis_label,
+            "pos_x": float(pos_field),
+            "pos_y": float(pos_y),
+            "neg_x": float(neg_field),
+            "neg_y": float(neg_y),
+            "width": float(width),
+        }
+        self.results.append(result)
 
-            lines.append(
-                f"Absorption: pos={pos_field:.3f}, neg={neg_field:.3f}, {self.analysis_label}={width:.3f}"
+        if self.tree is not None:
+            self.tree.insert(
+                "",
+                tk.END,
+                values=(
+                    self.analysis_label,
+                    f"{pos_field:.3f}",
+                    f"{pos_y:.3f}",
+                    f"{neg_field:.3f}",
+                    f"{neg_y:.3f}",
+                    f"{width:.3f}",
+                ),
             )
+
+        lines = [
+            f"Absorption: pos={r['pos_x']:.3f}, neg={r['neg_x']:.3f}, {r['analysis']}={r['width']:.3f}"
+            for r in self.results
+        ]
 
         if self.analyse_btn is not None:
             self.analyse_btn.config(state=tk.NORMAL)
@@ -216,6 +231,20 @@ class SpanPeakSelector:
         self._fit_lorentzian()
 
     # ------------------------------------------------------------------
+    def save_results(self, path: Path) -> None:
+        """Save analysed peak data to a CSV file.
+
+        Parameters
+        ----------
+        path:
+            Destination file path. Existing files will be overwritten.
+        """
+
+        import pandas as pd
+
+        pd.DataFrame(self.results).to_csv(Path(path), index=False)
+
+    # ------------------------------------------------------------------
     def show(self) -> None:
         """Start the Tkinter main loop and display the analysis GUI."""
 
@@ -293,14 +322,15 @@ class SpanPeakSelector:
         )
         self.fit_btn.pack(padx=5, pady=5)
 
-        columns = ("pos_x", "pos_y", "neg_x", "neg_y", "fwhm")
+        columns = ("analysis", "pos_x", "pos_y", "neg_x", "neg_y", "width")
         self.tree = ttk.Treeview(panel, columns=columns, show="headings", height=5)
         headings = {
+            "analysis": "Analysis",
             "pos_x": "Pos X",
             "pos_y": "Pos Y",
             "neg_x": "Neg X",
             "neg_y": "Neg Y",
-            "fwhm": "FWHM",
+            "width": self.analysis_label,
         }
         for col, text in headings.items():
             self.tree.heading(col, text=text)
