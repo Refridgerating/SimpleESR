@@ -59,6 +59,8 @@ def test_configure_subplot_allows_customisation():
         font_size=14,
         x_ticks=[0, 1, 2],
         y_ticks=[1, 2, 3],
+        major_grid=True,
+        minor_grid=True,
     )
 
     line = ax.lines[0]
@@ -73,4 +75,6 @@ def test_configure_subplot_allows_customisation():
     assert ax.xaxis.label.get_fontsize() == 14
     assert ax.yaxis.label.get_fontsize() == 14
     assert ax.title.get_fontsize() == 14
+    assert ax.xaxis._major_tick_kw["gridOn"]
+    assert ax.xaxis._minor_tick_kw["gridOn"]
     plt.close(fig)
