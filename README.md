@@ -8,7 +8,8 @@ This project is at an early stage — we’re starting from the basics and will 
 - Display raw spectra.
 - Basic plotting and inspection tools.
 - Simple GUI for selecting a data file to plot.
-- Interactive span selection to measure peak position and FWHM.
+- Interactive span selection to measure ΔH_pp and FWHM.
+- Lorentzian fit for individual peaks using interactive slider
 
 ## Requirements
 - Python 3.10+
@@ -34,12 +35,12 @@ python -m esr_lab.gui
 After the spectrum is shown, drag the mouse over a region that contains the
 positive and negative peaks of an absorption line. The program determines both
 extrema and reports their positions and the full width at half maximum (FWHM)
-given by the distance between them. Repeat the selection for additional
-absorptions.
+given by the distance between them. The ΔH_pp button can be used to determine linewidth via peak to peak. Repeat the selection for additional
+absorptions. Use the peaks determined with FWHM or ΔH_pp to determine Lorentzian peak fit position. Data will be tabulated for further or analysis. Extracted and calculated values can be exported to csv.
 
 ## Project Goals
 
-Keep it simple at first.
+Keep it simple.
 
 Add features step by step (fitting, peak detection, g-factor extraction, etc.).
 
