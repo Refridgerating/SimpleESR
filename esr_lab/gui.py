@@ -232,9 +232,49 @@ class SpanPeakSelector:
     versions.
     """
 
-    def __init__(self, spectrum) -> None:
-        self.spectrum = spectrum
-        self.ranges: list[tuple[float, float]] = []
+    def __init__(self, spectrum, labels: list[str] | None = None) -> None:
+        """Initialise the selector with one or more spectra.
+
+        Parameters
+        ----------
+        spectrum:
+            Either a single :class:`~esr_lab.spectrum.ESRSpectrum` instance or a
+            list of spectra to overlay.  The previous API accepted only a single
+            spectrum which is still supported for backwards compatibility.
+        """
+
+        # Normalise ``spectrum`` to a list so the rest of the implementation can
+        # treat all inputs uniformly.  Existing tests pass a single spectrum
+        # which results in a one-element list here.
+        if isinstance(spectrum, list):
+            self.spectra = spectrum
+        else:
+            self.spectra = [spectrum]
+
+        if labels is not None and len(labels) == len(self.spectra):
+            self.labels = labels
+        else:
+            self.labels = [f"Trace {i + 1}" for i in range(len(self.spectra))]
+        self.current = 0
+        self.spectrum = self.spectra[self.current]
+
+        # Keep analysis results for each loaded spectrum separately.  ``results``
+        # and ``lorentz_results`` always refer to the currently selected trace so
+        # the public API remains unchanged.
+        self.results_all: list[list[dict[str, float | str]]] = [
+            [] for _ in self.spectra
+        ]
+        self.lorentz_all: list[list[dict[str, float]]] = [
+            [] for _ in self.spectra
+        ]
+        self.results = self.results_all[self.current]
+        self.lorentz_results = self.lorentz_all[self.current]
+
+        # Individual span selections per trace
+        self.ranges_all: list[list[tuple[float, float]]] = [
+            [] for _ in self.spectra
+        ]
+        self.ranges = self.ranges_all[self.current]
 
         # GUI related attributes are initialised lazily in ``show`` so that the
         # class can be instantiated in environments without a display (e.g. the
@@ -246,14 +286,13 @@ class SpanPeakSelector:
         self.analyse_btn: tk.Button | None = None
         self.dhpp_btn: tk.Button | None = None
         self.fit_btn: tk.Button | None = None
+        self.trace_combo: ttk.Combobox | None = None
+        self.trace_var: tk.StringVar | None = None
         self.peak_slider: tk.Scale | None = None
         self.selected_peak: float | None = None
         self.selector: SpanSelector | None = None
         self.analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm
         self.analysis_label: str = "FWHM"
-        # Store analysed peak data for optional export
-        self.results: list[dict[str, float | str]] = []
-        self.lorentz_results: list[dict[str, float]] = []
 
     # ------------------------------------------------------------------
     def start_analysis(
@@ -467,6 +506,68 @@ class SpanPeakSelector:
 
         pd.DataFrame(self.results).to_csv(Path(path), index=False)
 
+    def _refresh_tables(self) -> None:
+        """Refresh the analysis tables for the currently active trace."""
+
+        if self.tree is not None:
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+            for r in self.results:
+                self.tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        r["analysis"],
+                        f"{r['pos_x']:.3f}",
+                        f"{r['pos_y']:.3f}",
+                        f"{r['neg_x']:.3f}",
+                        f"{r['neg_y']:.3f}",
+                        f"{r['width']:.3f}",
+                    ),
+                )
+
+        if self.lorentz_tree is not None:
+            for item in self.lorentz_tree.get_children():
+                self.lorentz_tree.delete(item)
+            for r in self.lorentz_results:
+                self.lorentz_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        f"{r['peak']:.3f}",
+                        f"{r['h_res']:.3f}",
+                        f"{r['delta']:.3f}",
+                        f"{r['A']:.3f}",
+                        f"{r['B']:.3f}",
+                    ),
+                )
+
+    def _on_trace_change(self, _event: object | None = None) -> None:
+        """Update state when the user selects a different trace."""
+
+        if self.trace_var is None:
+            return
+
+        label = self.trace_var.get()
+        if label not in self.labels:
+            return
+
+        self.current = self.labels.index(label)
+        self.spectrum = self.spectra[self.current]
+        self.results = self.results_all[self.current]
+        self.lorentz_results = self.lorentz_all[self.current]
+        self.ranges = self.ranges_all[self.current]
+
+        field_min = float(np.min(self.spectrum.field))
+        field_max = float(np.max(self.spectrum.field))
+        if self.peak_slider is not None:
+            self.peak_slider.config(from_=field_min, to=field_max)
+            mid = (field_min + field_max) / 2
+            self.peak_slider.set(mid)
+            self.selected_peak = mid
+
+        self._refresh_tables()
+
     # ------------------------------------------------------------------
     def show(self) -> None:
         """Start the Tkinter main loop and display the analysis GUI."""
@@ -504,7 +605,12 @@ class SpanPeakSelector:
                 meta_label.pack(padx=5, pady=5)
 
         fig, self.ax = plt.subplots()
-        self.ax.plot(self.spectrum.field, self.spectrum.intensity)
+        # Plot each spectrum to allow visual comparison.  Multiple traces are
+        # overlaid using Matplotlib's default colour cycle.
+        for spec in self.spectra:
+            self.ax.plot(spec.field, spec.intensity)
+        if len(self.spectra) > 1:
+            self.ax.legend(self.labels)
         self.ax.set_xlabel("Magnetic Field")
         self.ax.set_ylabel("Intensity")
         canvas = FigureCanvasTkAgg(fig, master=plot_frame)
@@ -513,6 +619,19 @@ class SpanPeakSelector:
         toolbar.update()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # When multiple traces are loaded provide a combo box for selecting the
+        # active spectrum used for analysis.
+        if len(self.spectra) > 1:
+            self.trace_var = tk.StringVar(value=self.labels[0])
+            self.trace_combo = ttk.Combobox(
+                panel,
+                textvariable=self.trace_var,
+                values=self.labels,
+                state="readonly",
+            )
+            self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
+            self.trace_combo.pack(padx=5, pady=5)
 
         self.analyse_btn = tk.Button(
             panel, text="Analyse FWHM", command=self.start_analysis
@@ -581,6 +700,10 @@ class SpanPeakSelector:
             self.lorentz_tree.column(col, anchor=tk.CENTER)
         self.lorentz_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+        # Ensure the tables reflect any results already calculated before the GUI
+        # was shown (useful for tests or scripted usage).
+        self._refresh_tables()
+
         self.root.mainloop()
 
 
@@ -590,7 +713,7 @@ def main() -> None:
     root = tk.Tk()
     root.withdraw()  # Hide the root window for the file dialog
 
-    file_path = filedialog.askopenfilename(
+    file_paths = filedialog.askopenfilenames(
         title="Select ESR CSV File",
         filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
     )
@@ -598,12 +721,17 @@ def main() -> None:
     if hasattr(root, "destroy"):
         root.destroy()
 
-    if not file_path:
+    if not file_paths:
         return
 
     try:
-        spectrum = ESRLoader.load_csv(Path(file_path))
-        app = SpanPeakSelector(spectrum)
+        spectra = []
+        labels: list[str] = []
+        for fp in file_paths:
+            p = Path(fp)
+            spectra.append(ESRLoader.load_csv(p))
+            labels.append(p.name)
+        app = SpanPeakSelector(spectra, labels=labels)
         app.show()
     except Exception as exc:  # pragma: no cover - GUI error handling
         messagebox.showerror("Error", str(exc))
