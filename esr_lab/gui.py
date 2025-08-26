@@ -28,6 +28,21 @@ from .analysis import (
 from .io import ESRLoader
 
 
+class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
+    """Tk toolbar without the subplot configuration tool.
+
+    The default Matplotlib toolbar includes a *Configure Subplots* button which
+    launches a dialog with sliders for adjusting subplot parameters.  The
+    application does not rely on this functionality and its presence spawns an
+    unnecessary window.  A small subclass of ``NavigationToolbar2Tk`` removes the
+    corresponding tool so that users are left with the standard navigation
+    controls (home, pan, zoom, save) only.
+    """
+
+    # Filter out the "Subplots" entry from the base class' tool items.
+    toolitems = [item for item in NavigationToolbar2Tk.toolitems if item[0] != "Subplots"]
+
+
 class SpanPeakSelector:
     """Interactive peak analysis with an optional Tk GUI.
 
@@ -286,7 +301,7 @@ class SpanPeakSelector:
         self.ax.set_ylabel("Intensity")
         canvas = FigureCanvasTkAgg(fig, master=plot_frame)
         canvas.draw()
-        toolbar = NavigationToolbar2Tk(canvas, plot_frame, pack_toolbar=False)
+        toolbar = NavigationToolbarNoSubplots(canvas, plot_frame, pack_toolbar=False)
         toolbar.update()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         toolbar.pack(side=tk.BOTTOM, fill=tk.X)
