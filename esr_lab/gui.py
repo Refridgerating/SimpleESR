@@ -47,25 +47,42 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
     that line editing operates on the user‑chosen graph.
     """
 
-    # Filter out the "Subplots" entry from the base class' tool items and add a
-    # custom "Edit" button which exposes a minimal set of Matplotlib's plotting
-    # options.  This allows users to tweak axis limits, labels and line styling
-    # directly from the embedded toolbar.
+    # Filter out the "Subplots" entry from the base class' tool items and add
+    # custom tools for editing axes and updating the legend.  This allows users
+    # to tweak axis limits and refresh legend entries directly from the embedded
+    # toolbar.
     toolitems = [item for item in NavigationToolbar2Tk.toolitems if item[0] != "Subplots"]
 
-    # Insert the edit tool just before the standard "Save" action.  The
-    # ``qt4_editor_options`` icon is shipped with Matplotlib and provides a
-    # sensible default even for the Tk backend.
+    # Insert the edit tool and the legend updater just before the standard
+    # "Save" action.  The ``qt4_editor_options`` icon is shipped with Matplotlib
+    # and provides a sensible default even for the Tk backend.
     _names = [item[0] for item in toolitems if item]
     if "Save" in _names:
+        idx = _names.index("Save")
         toolitems.insert(
-            _names.index("Save"),
+            idx,
             ("Edit", "Edit axis, curve and image parameters", "qt4_editor_options", "edit_parameters"),
         )
+        toolitems.insert(
+            idx + 1,
+            ("Legend", "Update legend to reflect line styles", "qt4_editor_options", "update_legend"),
+        )
 
-    def __init__(self, canvas, window, get_active_index: Callable[[], int] | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        canvas,
+        window,
+        get_active_index: Callable[[], int] | None = None,
+        update_legend: Callable[[], None] | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(canvas, window, **kwargs)
         self.get_active_index = get_active_index or (lambda: 0)
+        self.update_legend_callback = update_legend
+
+    def update_legend(self) -> None:
+        if self.update_legend_callback:
+            self.update_legend_callback()
 
     def _get_selected_line(self, ax):
         idx = self.get_active_index()
@@ -298,7 +315,6 @@ class SpanPeakSelector:
         self.analyse_btn: tk.Button | None = None
         self.dhpp_btn: tk.Button | None = None
         self.fit_btn: tk.Button | None = None
-        self.legend_btn: tk.Button | None = None
         self.trace_combo: ttk.Combobox | None = None
         self.trace_var: tk.StringVar | None = None
         self.peak_slider: tk.Scale | None = None
@@ -700,7 +716,11 @@ class SpanPeakSelector:
         canvas = FigureCanvasTkAgg(fig, master=plot_frame)
         canvas.draw()
         toolbar = NavigationToolbarNoSubplots(
-            canvas, plot_frame, get_active_index=lambda: self.current, pack_toolbar=False
+            canvas,
+            plot_frame,
+            get_active_index=lambda: self.current,
+            update_legend=self.update_legend,
+            pack_toolbar=False,
         )
         toolbar.update()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -719,11 +739,6 @@ class SpanPeakSelector:
             )
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(padx=5, pady=5)
-
-            self.legend_btn = tk.Button(
-                panel, text="Update Legend", command=self.update_legend
-            )
-            self.legend_btn.pack(padx=5, pady=5)
 
         self.analyse_btn = tk.Button(
             panel, text="Analyse FWHM", command=self.start_analysis
