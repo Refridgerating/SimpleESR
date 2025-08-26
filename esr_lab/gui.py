@@ -265,6 +265,30 @@ class SpanPeakSelector:
         panel = tk.Frame(self.root)
         panel.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Show acquisition metadata at the top of the analysis panel
+        if self.spectrum.metadata:
+            meta = self.spectrum.metadata
+            lines: list[str] = []
+            if (freq := meta.get("Frequency")) is not None:
+                lines.append(f"Frequency: {freq}")
+            if (mod := meta.get("Modulation")) is not None:
+                lines.append(f"Modulation: {mod}")
+            if (mod_f := meta.get("ModulationFreq")) is not None:
+                lines.append(f"Mod. Freq.: {mod_f}")
+            if (b_from := meta.get("Bfrom")) is not None and (
+                b_to := meta.get("Bto")
+            ) is not None:
+                lines.append(f"B Sweep: {b_from}-{b_to}")
+            if (mw := meta.get("MicrowavePower")) is not None:
+                lines.append(f"MW Power: {mw}")
+            if (st := meta.get("SweepTime")) is not None:
+                lines.append(f"Sweep Time: {st}")
+            if (temp := meta.get("Temperature")) is not None:
+                lines.append(f"Temperature: {temp}")
+            if lines:
+                meta_label = tk.Label(panel, text="\n".join(lines), justify=tk.LEFT)
+                meta_label.pack(padx=5, pady=5)
+
         fig, self.ax = plt.subplots()
         self.ax.plot(self.spectrum.field, self.spectrum.intensity)
         self.ax.set_xlabel("Magnetic Field")
