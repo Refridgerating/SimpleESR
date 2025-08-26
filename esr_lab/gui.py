@@ -315,6 +315,8 @@ class SpanPeakSelector:
         self.analyse_btn: tk.Button | None = None
         self.dhpp_btn: tk.Button | None = None
         self.fit_btn: tk.Button | None = None
+        self.compare_btn: tk.Button | None = None
+        self.compare_tree: ttk.Treeview | None = None
         self.trace_combo: ttk.Combobox | None = None
         self.trace_var: tk.StringVar | None = None
         self.peak_slider: tk.Scale | None = None
@@ -350,6 +352,43 @@ class SpanPeakSelector:
             # When running without a display (e.g. during tests) Tk may raise
             # errors.  Defaulting to the first peak keeps the API usable.
             return 1
+
+    # ------------------------------------------------------------------
+    def _prompt_traces(self) -> tuple[int, int] | None:
+        """Ask the user which two traces should be compared.
+
+        Returns
+        -------
+        tuple[int, int] | None
+            Zero-based indices of the selected traces or ``None`` if the dialog
+            is cancelled. In headless environments the first two traces are
+            chosen by default when available.
+        """
+
+        if len(self.spectra) < 2:
+            return None
+        try:
+            first = simpledialog.askinteger(
+                "Compare Spectra",
+                "First trace (1-indexed):",
+                minvalue=1,
+                maxvalue=len(self.spectra),
+            )
+            if first is None:
+                return None
+            second = simpledialog.askinteger(
+                "Compare Spectra",
+                "Second trace (1-indexed):",
+                minvalue=1,
+                maxvalue=len(self.spectra),
+            )
+            if second is None:
+                return None
+            return int(first - 1), int(second - 1)
+        except Exception:
+            if len(self.spectra) >= 2:
+                return 0, 1
+            return None
 
     # ------------------------------------------------------------------
     def start_analysis(
@@ -566,6 +605,61 @@ class SpanPeakSelector:
         self._fit_lorentzian()
 
     # ------------------------------------------------------------------
+    def compare_spectra(self) -> None:
+        """Compare analysis results between two traces and tabulate differences."""
+
+        indices = self._prompt_traces()
+        if indices is None:
+            messagebox.showinfo("Compare Spectra", "Two traces are required for comparison")
+            return
+
+        first_idx, second_idx = indices
+        res1 = self.results_all[first_idx]
+        res2 = self.results_all[second_idx]
+        lor1 = self.lorentz_all[first_idx]
+        lor2 = self.lorentz_all[second_idx]
+
+        def _get(res_list: list[dict[str, float | int | str]], analysis: str, peak: int, key: str) -> float | None:
+            for r in res_list:
+                if r.get("analysis") == analysis and int(r.get("peak", 0)) == peak:
+                    return float(r.get(key))
+            return None
+
+        rows: list[tuple[str, float, float, float]] = []
+        for peak in (1, 2):
+            f1 = _get(res1, "FWHM", peak, "width")
+            f2 = _get(res2, "FWHM", peak, "width")
+            if f1 is not None and f2 is not None:
+                rows.append((f"FWHM P{peak}", f1, f2, f1 - f2))
+
+            d1 = _get(res1, "\u0394H_pp", peak, "width")
+            d2 = _get(res2, "\u0394H_pp", peak, "width")
+            if d1 is not None and d2 is not None:
+                rows.append((f"\u0394H_pp P{peak}", d1, d2, d1 - d2))
+
+            h1 = _get(lor1, "Lorentzian", peak, "h_res")
+            h2 = _get(lor2, "Lorentzian", peak, "h_res")
+            if h1 is not None and h2 is not None:
+                rows.append((f"H_res P{peak}", h1, h2, h1 - h2))
+
+        if not rows:
+            messagebox.showinfo("Compare Spectra", "No comparable results found")
+            return
+
+        if self.compare_tree is None:
+            return
+
+        for item in self.compare_tree.get_children():
+            self.compare_tree.delete(item)
+
+        for name, v1, v2, diff in rows:
+            self.compare_tree.insert(
+                "",
+                tk.END,
+                values=(name, f"{v1:.3f}", f"{v2:.3f}", f"{diff:.3f}"),
+            )
+
+    # ------------------------------------------------------------------
     def save_results(self, path: Path) -> None:
         """Save analysed peak data to a CSV file.
 
@@ -771,6 +865,11 @@ class SpanPeakSelector:
         )
         self.fit_btn.pack(padx=5, pady=5)
 
+        self.compare_btn = tk.Button(
+            panel, text="Compare Spectra", command=self.compare_spectra
+        )
+        self.compare_btn.pack(padx=5, pady=5)
+
         columns = ("analysis", "peak", "pos_x", "pos_y", "neg_x", "neg_y", "width")
         self.tree = ttk.Treeview(panel, columns=columns, show="headings", height=5)
         headings = {
@@ -808,6 +907,21 @@ class SpanPeakSelector:
             # Center Lorentzian fit results to keep the table consistent
             self.lorentz_tree.column(col, anchor=tk.CENTER)
         self.lorentz_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        compare_cols = ("param", "first", "second", "diff")
+        self.compare_tree = ttk.Treeview(
+            panel, columns=compare_cols, show="headings", height=6
+        )
+        compare_headings = {
+            "param": "Parameter",
+            "first": "Trace 1",
+            "second": "Trace 2",
+            "diff": "Diff",
+        }
+        for col, text in compare_headings.items():
+            self.compare_tree.heading(col, text=text)
+            self.compare_tree.column(col, anchor=tk.CENTER)
+        self.compare_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Ensure the tables reflect any results already calculated before the GUI
         # was shown (useful for tests or scripted usage).

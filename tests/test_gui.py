@@ -284,3 +284,43 @@ def test_table_columns_centered(monkeypatch):
     assert column_cfg
     assert all(cfg.get("anchor") == gui.tk.CENTER for cfg in column_cfg.values())
 
+
+def test_spectra_comparison_tabulated():
+    spec1 = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))
+    selector = gui.SpanPeakSelector([spec1, spec2])
+
+    selector.compare_tree = MagicMock()
+    selector.compare_tree.get_children.return_value = []
+
+    selector.results_all = [
+        [
+            {"analysis": "FWHM", "peak": 1, "pos_x": 0, "pos_y": 0, "neg_x": 0, "neg_y": 0, "width": 1.0},
+            {"analysis": "\u0394H_pp", "peak": 1, "pos_x": 0, "pos_y": 0, "neg_x": 0, "neg_y": 0, "width": 3.0},
+        ],
+        [
+            {"analysis": "FWHM", "peak": 1, "pos_x": 0, "pos_y": 0, "neg_x": 0, "neg_y": 0, "width": 2.0},
+            {"analysis": "\u0394H_pp", "peak": 1, "pos_x": 0, "pos_y": 0, "neg_x": 0, "neg_y": 0, "width": 5.0},
+        ],
+    ]
+    selector.lorentz_all = [
+        [
+            {"analysis": "Lorentzian", "peak": 1, "h_res": 10.0, "delta": 0, "A": 0, "B": 0}
+        ],
+        [
+            {"analysis": "Lorentzian", "peak": 1, "h_res": 12.0, "delta": 0, "A": 0, "B": 0}
+        ],
+    ]
+
+    with patch("esr_lab.gui.simpledialog.askinteger", side_effect=[1, 2]), patch(
+        "esr_lab.gui.messagebox.showinfo"
+    ):
+        selector.compare_spectra()
+
+    calls = selector.compare_tree.insert.call_args_list
+    assert calls
+    values = [c.kwargs["values"] for c in calls]
+    assert ("FWHM P1", "1.000", "2.000", "-1.000") in values
+    assert ("\u0394H_pp P1", "3.000", "5.000", "-2.000") in values
+    assert ("H_res P1", "10.000", "12.000", "-2.000") in values
+
