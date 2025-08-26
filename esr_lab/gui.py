@@ -126,7 +126,12 @@ class SpanPeakSelector:
 
     # ------------------------------------------------------------------
     def _fit_lorentzian(self) -> None:
-        """Fit a Lorentzian line near the selected peak and optionally keep it."""
+        """Fit a Lorentzian derivative using the full data set.
+
+        The slider only provides an initial guess for the resonance field.  The
+        actual fit is performed on the complete spectrum so that the symmetric
+        and dispersive components are determined from all available data.
+        """
 
         assert self.ax is not None
 
@@ -134,19 +139,28 @@ class SpanPeakSelector:
             messagebox.showwarning("Lorentzian Fit", "No peak selected")
             return
 
-        field_min = float(np.min(self.spectrum.field))
-        field_max = float(np.max(self.spectrum.field))
+        field = self.spectrum.field
+        intensity = self.spectrum.intensity
+
+        field_min = float(np.min(field))
+        field_max = float(np.max(field))
         window = (field_max - field_min) * 0.05
         start = self.selected_peak - window / 2
         end = self.selected_peak + window / 2
 
-        mask = (self.spectrum.field >= start) & (self.spectrum.field <= end)
-        if not np.any(mask):
-            mask = slice(None)
+        try:
+            pos_idx, neg_idx = find_peak(field, intensity, start, end)
+            delta_guess = abs(field[pos_idx] - field[neg_idx]) / 2.0
+            a_guess = (intensity[pos_idx] - intensity[neg_idx]) / 2.0
+        except ValueError:
+            # Fallback guesses if the window does not contain valid peaks
+            delta_guess = (field_max - field_min) / 20.0
+            a_guess = (float(np.max(intensity)) - float(np.min(intensity))) / 2.0
+            if a_guess == 0.0:
+                a_guess = 1.0
 
-        field = self.spectrum.field[mask]
-        intensity = self.spectrum.intensity[mask]
-        params = fit_lorentzian_derivative(field, intensity)
+        p0 = (self.selected_peak, delta_guess, a_guess, 0.0)
+        params = fit_lorentzian_derivative(field, intensity, p0=p0)
 
         h_res, delta, A, B = params
 
