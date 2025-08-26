@@ -82,15 +82,22 @@ class SpanPeakSelector:
         analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm,
         label: str = "FWHM",
     ) -> None:
-        """Enable span selection and prepare for analysis."""
+        """Enable span selection and prepare for analysis.
 
-        if self.tree is not None:
-            for row in self.tree.get_children():
-                self.tree.delete(row)
-            if "width" in self.tree["columns"]:
-                self.tree.heading("width", text=label)
+        Previously this method cleared any existing analysis results each time a
+        new analysis was started.  This behaviour made it impossible to perform
+        multiple analyses in succession without losing earlier data.  The method
+        now preserves ``self.results`` and any existing table entries so that
+        users can accumulate measurements across different analyses.
+        """
+
+        if self.tree is not None and "width" in self.tree["columns"]:
+            # The tree keeps previously analysed data; only the analysis label
+            # column distinguishes between different result types so the width
+            # heading can remain unchanged.
+            pass
+
         self.ranges.clear()
-        self.results.clear()
         self.analysis_func = analysis_func
         self.analysis_label = label
         if self.selector is not None:
@@ -345,7 +352,10 @@ class SpanPeakSelector:
             "pos_y": "Pos Y",
             "neg_x": "Neg X",
             "neg_y": "Neg Y",
-            "width": self.analysis_label,
+            # The value column holds either FWHM or ΔH_pp results depending on
+            # the active analysis.  Keeping a generic heading allows appending
+            # results from multiple analyses without clearing the table.
+            "width": "Value",
         }
         for col, text in headings.items():
             self.tree.heading(col, text=text)
