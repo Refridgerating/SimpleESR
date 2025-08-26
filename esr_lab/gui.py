@@ -214,9 +214,9 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             ax.grid(minor_var.get(), which="minor")
 
             self.canvas.draw_idle()
-            dialog.destroy()
 
-        tk.Button(dialog, text="Apply", command=apply).grid(row=16, column=0, columnspan=2, pady=5)
+        tk.Button(dialog, text="Apply", command=apply).grid(row=16, column=0, pady=5)
+        tk.Button(dialog, text="Close", command=dialog.destroy).grid(row=16, column=1, pady=5)
 
 
 
