@@ -42,7 +42,9 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
     application does not rely on this functionality and its presence spawns an
     unnecessary window.  A small subclass of ``NavigationToolbar2Tk`` removes the
     corresponding tool so that users are left with the standard navigation
-    controls (home, pan, zoom, save) only.
+    controls (home, pan, zoom, save) only.  The toolbar additionally knows about
+    the currently selected spectrum through a ``get_active_index`` callback so
+    that line editing operates on the user‑chosen graph.
     """
 
     # Filter out the "Subplots" entry from the base class' tool items and add a
@@ -60,6 +62,16 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             _names.index("Save"),
             ("Edit", "Edit axis, curve and image parameters", "qt4_editor_options", "edit_parameters"),
         )
+
+    def __init__(self, canvas, window, get_active_index: Callable[[], int] | None = None, **kwargs) -> None:
+        super().__init__(canvas, window, **kwargs)
+        self.get_active_index = get_active_index or (lambda: 0)
+
+    def _get_selected_line(self, ax):
+        idx = self.get_active_index()
+        if ax.lines and 0 <= idx < len(ax.lines):
+            return ax.lines[idx]
+        return ax.lines[0] if ax.lines else None
 
     def edit_parameters(self) -> None:
         """Open a small Tk dialog to edit basic plot parameters.
@@ -99,10 +111,11 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         xmax_ent = add_entry(4, "X max", f"{xmax}")
         ymin_ent = add_entry(5, "Y min", f"{ymin}")
         ymax_ent = add_entry(6, "Y max", f"{ymax}")
-        lw_init = ax.lines[0].get_linewidth() if ax.lines else 1.0
+        line = self._get_selected_line(ax)
+        lw_init = line.get_linewidth() if line is not None else 1.0
         lw_ent = add_entry(7, "Line width", f"{lw_init}")
 
-        color_init = ax.lines[0].get_color() if ax.lines else ""
+        color_init = line.get_color() if line is not None else ""
         tk.Label(dialog, text="Line color").grid(row=8, column=0, sticky="e")
         color_frame = tk.Frame(dialog)
         color_frame.grid(row=8, column=1, padx=5, pady=2, sticky="w")
@@ -132,7 +145,7 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         color_ent.bind("<KeyRelease>", _update_preview)
 
         tk.Label(dialog, text="Marker").grid(row=9, column=0, sticky="e")
-        marker_init = ax.lines[0].get_marker() if ax.lines else "None"
+        marker_init = line.get_marker() if line is not None else "None"
         marker_var = tk.StringVar(value=marker_init)
         markers = ["None", "o", "s", "^", "D", "*", "x", "+"]
         tk.OptionMenu(dialog, marker_var, *markers).grid(row=9, column=1, sticky="w")
@@ -174,20 +187,19 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             ax.set_xlabel(xlabel_ent.get())
             ax.set_ylabel(ylabel_ent.get())
 
-            try:
-                lw = float(lw_ent.get())
-                for line in ax.lines:
+            line = self._get_selected_line(ax)
+            if line is not None:
+                try:
+                    lw = float(lw_ent.get())
                     line.set_linewidth(lw)
-            except ValueError:
-                pass
+                except ValueError:
+                    pass
 
-            color_val = color_ent.get().strip()
-            if color_val:
-                for line in ax.lines:
+                color_val = color_ent.get().strip()
+                if color_val:
                     line.set_color(color_val)
 
-            marker_val = marker_var.get()
-            for line in ax.lines:
+                marker_val = marker_var.get()
                 line.set_marker("" if marker_val == "None" else marker_val)
 
             ax.set_xscale(xscale_var.get())
@@ -615,7 +627,9 @@ class SpanPeakSelector:
         self.ax.set_ylabel("Intensity")
         canvas = FigureCanvasTkAgg(fig, master=plot_frame)
         canvas.draw()
-        toolbar = NavigationToolbarNoSubplots(canvas, plot_frame, pack_toolbar=False)
+        toolbar = NavigationToolbarNoSubplots(
+            canvas, plot_frame, get_active_index=lambda: self.current, pack_toolbar=False
+        )
         toolbar.update()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         toolbar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -623,6 +637,7 @@ class SpanPeakSelector:
         # When multiple traces are loaded provide a combo box for selecting the
         # active spectrum used for analysis.
         if len(self.spectra) > 1:
+            tk.Label(panel, text="Graph to be edited/analyzed").pack(padx=5, pady=(5, 0))
             self.trace_var = tk.StringVar(value=self.labels[0])
             self.trace_combo = ttk.Combobox(
                 panel,

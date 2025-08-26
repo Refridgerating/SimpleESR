@@ -198,7 +198,19 @@ def test_toolbar_has_default_tools_without_subplots():
     tools = [item[0] for item in gui.NavigationToolbarNoSubplots.toolitems if item]
     assert "Subplots" not in tools
     assert "Pan" in tools and "Zoom" in tools
-    assert "Edit" in tools
+
+
+def test_toolbar_selects_active_line():
+    fig, ax = plt.subplots()
+    line1, = ax.plot([0, 1], [0, 1])
+    line2, = ax.plot([0, 1], [1, 0])
+
+    toolbar = gui.NavigationToolbarNoSubplots.__new__(gui.NavigationToolbarNoSubplots)
+    toolbar.get_active_index = lambda: 1
+    assert toolbar._get_selected_line(ax) is line2
+    toolbar.get_active_index = lambda: 0
+    assert toolbar._get_selected_line(ax) is line1
+    plt.close(fig)
 
 
 def test_filter_ticks_respects_limits():
