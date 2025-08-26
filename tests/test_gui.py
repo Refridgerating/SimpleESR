@@ -42,6 +42,7 @@ def test_span_selector_analysis():
         assert selector.results == [
             {
                 "analysis": "FWHM",
+                "peak": 1,
                 "pos_x": 1.0,
                 "pos_y": 0.0,
                 "neg_x": 3.0,
@@ -58,7 +59,8 @@ def test_peak_to_peak_analysis():
     fig, selector.ax = plt.subplots()
     with patch("esr_lab.gui.find_peak", return_value=(1, 3)) as fp, \
         patch("esr_lab.gui.calc_peak_to_peak", return_value=2.0) as cpp, \
-        patch("esr_lab.gui.messagebox.showinfo") as info:
+        patch("esr_lab.gui.messagebox.showinfo") as info, \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=1):
         selector.start_peak_to_peak()
         selector.onselect(0.0, 4.0)
         fp.assert_called_once()
@@ -67,6 +69,7 @@ def test_peak_to_peak_analysis():
         assert selector.results == [
             {
                 "analysis": "\u0394H_pp",
+                "peak": 1,
                 "pos_x": 1.0,
                 "pos_y": 0.0,
                 "neg_x": 3.0,
@@ -85,7 +88,8 @@ def test_results_persist_across_analyses():
     with patch("esr_lab.gui.find_peak", return_value=(1, 3)) as fp, \
         patch("esr_lab.gui.calc_fwhm", return_value=0.5) as cf, \
         patch("esr_lab.gui.calc_peak_to_peak", return_value=2.0) as cpp, \
-        patch("esr_lab.gui.messagebox.showinfo"):
+        patch("esr_lab.gui.messagebox.showinfo"), \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=1):
         selector.start_analysis(analysis_func=cf)
         selector.onselect(1.0, 2.0)
         selector.start_peak_to_peak()
@@ -96,6 +100,7 @@ def test_results_persist_across_analyses():
         assert selector.results == [
             {
                 "analysis": "FWHM",
+                "peak": 1,
                 "pos_x": 1.0,
                 "pos_y": 0.0,
                 "neg_x": 3.0,
@@ -104,6 +109,7 @@ def test_results_persist_across_analyses():
             },
             {
                 "analysis": "\u0394H_pp",
+                "peak": 1,
                 "pos_x": 1.0,
                 "pos_y": 0.0,
                 "neg_x": 3.0,
@@ -131,7 +137,8 @@ def test_multi_trace_results_isolated():
 
     with patch("esr_lab.gui.find_peak", return_value=(1, 3)), \
         patch("esr_lab.gui.calc_fwhm", return_value=0.5), \
-        patch("esr_lab.gui.messagebox.showinfo"):
+        patch("esr_lab.gui.messagebox.showinfo"), \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=1):
         selector.start_analysis()
         selector.onselect(1.0, 2.0)
 
@@ -154,7 +161,9 @@ def test_lorentzian_fit_overlay():
     selector.selected_peak = -0.5
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative", return_value=(0.0, 1.0, 1.0, 0.0)
-    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True) as ask:
+    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True) as ask, patch(
+        "esr_lab.gui.simpledialog.askinteger", return_value=1
+    ):
         selector.fit_lorentzian()
         fit.assert_called_once()
         ask.assert_called_once()
@@ -166,7 +175,9 @@ def test_lorentzian_fit_overlay():
     selector.selected_peak = 0.5
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative", return_value=(0.0, 1.0, 1.0, 0.0)
-    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=False) as ask:
+    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=False) as ask, patch(
+        "esr_lab.gui.simpledialog.askinteger", return_value=1
+    ):
         selector.fit_lorentzian()
         fit.assert_called_once()
         ask.assert_called_once()
@@ -184,11 +195,13 @@ def test_lorentzian_fit_results_tabulated():
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative",
         return_value=(0.0, 1.0, 2.0, 3.0),
-    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True):
+    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True), patch(
+        "esr_lab.gui.simpledialog.askinteger", return_value=1
+    ):
         selector.fit_lorentzian()
         fit.assert_called_once()
     assert selector.lorentz_results == [
-        {"peak": 0.0, "h_res": 0.0, "delta": 1.0, "A": 2.0, "B": 3.0}
+        {"analysis": "Lorentzian", "peak": 1, "h_res": 0.0, "delta": 1.0, "A": 2.0, "B": 3.0}
     ]
     selector.lorentz_tree.insert.assert_called_once()
     plt.close(fig)
