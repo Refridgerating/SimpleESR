@@ -172,6 +172,7 @@ class SpanPeakSelector:
         self.root: tk.Tk | None = None
         self.ax = None
         self.tree: ttk.Treeview | None = None
+        self.lorentz_tree: ttk.Treeview | None = None
         self.analyse_btn: tk.Button | None = None
         self.dhpp_btn: tk.Button | None = None
         self.fit_btn: tk.Button | None = None
@@ -182,6 +183,7 @@ class SpanPeakSelector:
         self.analysis_label: str = "FWHM"
         # Store analysed peak data for optional export
         self.results: list[dict[str, float | str]] = []
+        self.lorentz_results: list[dict[str, float]] = []
 
     # ------------------------------------------------------------------
     def start_analysis(
@@ -353,6 +355,28 @@ class SpanPeakSelector:
         if not accept:
             line.remove()
             self.ax.figure.canvas.draw_idle()
+            return
+
+        result = {
+            "peak": float(self.selected_peak),
+            "h_res": float(h_res),
+            "delta": float(delta),
+            "A": float(A),
+            "B": float(B),
+        }
+        self.lorentz_results.append(result)
+        if self.lorentz_tree is not None:
+            self.lorentz_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    f"{self.selected_peak:.3f}",
+                    f"{h_res:.3f}",
+                    f"{delta:.3f}",
+                    f"{A:.3f}",
+                    f"{B:.3f}",
+                ),
+            )
 
     def fit_lorentzian(self) -> None:
         """Fit the Lorentzian model to the peak chosen via the slider."""
@@ -467,6 +491,21 @@ class SpanPeakSelector:
         for col, text in headings.items():
             self.tree.heading(col, text=text)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        lorentz_columns = ("peak", "h_res", "delta", "A", "B")
+        self.lorentz_tree = ttk.Treeview(
+            panel, columns=lorentz_columns, show="headings", height=5
+        )
+        lorentz_headings = {
+            "peak": "Peak",
+            "h_res": "H_res",
+            "delta": "Delta",
+            "A": "A",
+            "B": "B",
+        }
+        for col, text in lorentz_headings.items():
+            self.lorentz_tree.heading(col, text=text)
+        self.lorentz_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.root.mainloop()
 

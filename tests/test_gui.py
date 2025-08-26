@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from esr_lab import gui
 from esr_lab.spectrum import ESRSpectrum
@@ -139,6 +139,26 @@ def test_lorentzian_fit_overlay():
         fit.assert_called_once()
         ask.assert_called_once()
         assert len(selector.ax.lines) == 1
+    plt.close(fig)
+
+
+def test_lorentzian_fit_results_tabulated():
+    spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+    selector.ax.plot(spectrum.field, spectrum.intensity)
+    selector.selected_peak = 0.0
+    selector.lorentz_tree = MagicMock()
+    with patch(
+        "esr_lab.gui.fit_lorentzian_derivative",
+        return_value=(0.0, 1.0, 2.0, 3.0),
+    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True):
+        selector.fit_lorentzian()
+        fit.assert_called_once()
+    assert selector.lorentz_results == [
+        {"peak": 0.0, "h_res": 0.0, "delta": 1.0, "A": 2.0, "B": 3.0}
+    ]
+    selector.lorentz_tree.insert.assert_called_once()
     plt.close(fig)
 
 
