@@ -39,8 +39,115 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
     controls (home, pan, zoom, save) only.
     """
 
-    # Filter out the "Subplots" entry from the base class' tool items.
+    # Filter out the "Subplots" entry from the base class' tool items and add a
+    # custom "Edit" button which exposes a minimal set of Matplotlib's plotting
+    # options.  This allows users to tweak axis limits, labels and line styling
+    # directly from the embedded toolbar.
     toolitems = [item for item in NavigationToolbar2Tk.toolitems if item[0] != "Subplots"]
+
+    # Insert the edit tool just before the standard "Save" action.  The
+    # ``qt4_editor_options`` icon is shipped with Matplotlib and provides a
+    # sensible default even for the Tk backend.
+    _names = [item[0] for item in toolitems if item]
+    if "Save" in _names:
+        toolitems.insert(
+            _names.index("Save"),
+            ("Edit", "Edit axis, curve and image parameters", "qt4_editor_options", "edit_parameters"),
+        )
+
+    def edit_parameters(self) -> None:
+        """Open a small Tk dialog to edit basic plot parameters.
+
+        The dialog exposes a subset of Matplotlib's axis and line configuration
+        options.  Users can modify axis limits, labels, titles, tick locations,
+        scales and line width.  Invalid inputs are ignored in order to keep the
+        interface straightforward and robust.
+        """
+
+        figure = self.canvas.figure
+        axes = figure.axes
+        if not axes:
+            messagebox.showwarning("Edit Plot", "No axes to configure")
+            return
+
+        ax = axes[0]
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Edit Plot")
+
+        # Helper to create a labelled entry
+        def add_entry(row: int, label: str, initial: str) -> tk.Entry:
+            tk.Label(dialog, text=label).grid(row=row, column=0, sticky="e")
+            var = tk.Entry(dialog)
+            var.insert(0, initial)
+            var.grid(row=row, column=1, padx=5, pady=2)
+            return var
+
+        xmin, xmax = ax.get_xlim()
+        ymin, ymax = ax.get_ylim()
+
+        title_ent = add_entry(0, "Title", ax.get_title())
+        xlabel_ent = add_entry(1, "X label", ax.get_xlabel())
+        ylabel_ent = add_entry(2, "Y label", ax.get_ylabel())
+        xmin_ent = add_entry(3, "X min", f"{xmin}")
+        xmax_ent = add_entry(4, "X max", f"{xmax}")
+        ymin_ent = add_entry(5, "Y min", f"{ymin}")
+        ymax_ent = add_entry(6, "Y max", f"{ymax}")
+        lw_init = ax.lines[0].get_linewidth() if ax.lines else 1.0
+        lw_ent = add_entry(7, "Line width", f"{lw_init}")
+
+        # Scale selection
+        tk.Label(dialog, text="X scale").grid(row=8, column=0, sticky="e")
+        xscale_var = tk.StringVar(value=ax.get_xscale())
+        tk.OptionMenu(dialog, xscale_var, "linear", "log").grid(row=8, column=1, sticky="w")
+
+        tk.Label(dialog, text="Y scale").grid(row=9, column=0, sticky="e")
+        yscale_var = tk.StringVar(value=ax.get_yscale())
+        tk.OptionMenu(dialog, yscale_var, "linear", "log").grid(row=9, column=1, sticky="w")
+
+        xticks_ent = add_entry(10, "X ticks", ", ".join(map(str, ax.get_xticks())))
+        yticks_ent = add_entry(11, "Y ticks", ", ".join(map(str, ax.get_yticks())))
+
+        def apply() -> None:
+            try:
+                ax.set_xlim(float(xmin_ent.get()), float(xmax_ent.get()))
+            except ValueError:
+                pass
+            try:
+                ax.set_ylim(float(ymin_ent.get()), float(ymax_ent.get()))
+            except ValueError:
+                pass
+
+            ax.set_title(title_ent.get())
+            ax.set_xlabel(xlabel_ent.get())
+            ax.set_ylabel(ylabel_ent.get())
+
+            try:
+                lw = float(lw_ent.get())
+                for line in ax.lines:
+                    line.set_linewidth(lw)
+            except ValueError:
+                pass
+
+            ax.set_xscale(xscale_var.get())
+            ax.set_yscale(yscale_var.get())
+
+            try:
+                ticks = [float(v) for v in xticks_ent.get().split(",") if v.strip()]
+                ax.set_xticks(ticks)
+            except ValueError:
+                pass
+            try:
+                ticks = [float(v) for v in yticks_ent.get().split(",") if v.strip()]
+                ax.set_yticks(ticks)
+            except ValueError:
+                pass
+
+            self.canvas.draw_idle()
+            dialog.destroy()
+
+        tk.Button(dialog, text="Apply", command=apply).grid(row=12, column=0, columnspan=2, pady=5)
+
 
 
 class SpanPeakSelector:

@@ -146,4 +146,5 @@ def test_toolbar_has_default_tools_without_subplots():
     tools = [item[0] for item in gui.NavigationToolbarNoSubplots.toolitems if item]
     assert "Subplots" not in tools
     assert "Pan" in tools and "Zoom" in tools
+    assert "Edit" in tools
 
