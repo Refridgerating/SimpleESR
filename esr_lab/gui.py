@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk, colorchooser
+from tkinter import filedialog, messagebox, ttk, colorchooser, simpledialog
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -273,10 +273,10 @@ class SpanPeakSelector:
         # Keep analysis results for each loaded spectrum separately.  ``results``
         # and ``lorentz_results`` always refer to the currently selected trace so
         # the public API remains unchanged.
-        self.results_all: list[list[dict[str, float | str]]] = [
+        self.results_all: list[list[dict[str, float | str | int]]] = [
             [] for _ in self.spectra
         ]
-        self.lorentz_all: list[list[dict[str, float]]] = [
+        self.lorentz_all: list[list[dict[str, float | str | int]]] = [
             [] for _ in self.spectra
         ]
         self.results = self.results_all[self.current]
@@ -302,9 +302,35 @@ class SpanPeakSelector:
         self.trace_var: tk.StringVar | None = None
         self.peak_slider: tk.Scale | None = None
         self.selected_peak: float | None = None
+        # Keep track of which peak (1 or 2) the user is analysing.
+        # Default to the first peak so headless usage remains functional
+        # without invoking the interactive prompt.
+        self.current_peak: int = 1
         self.selector: SpanSelector | None = None
         self.analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm
         self.analysis_label: str = "FWHM"
+
+    # ------------------------------------------------------------------
+    def _prompt_peak(self) -> int | None:
+        """Ask the user which peak should be analysed.
+
+        Returns
+        -------
+        int | None
+            ``1`` or ``2`` depending on the user's choice.  ``None`` is
+            returned if the dialog is cancelled.  In headless environments
+            where the dialog cannot be shown, the function falls back to
+            the first peak to keep scripted use working.
+        """
+
+        try:
+            return simpledialog.askinteger(
+                "Select Peak", "Analyse peak 1 or 2?", minvalue=1, maxvalue=2
+            )
+        except Exception:
+            # When running without a display (e.g. during tests) Tk may raise
+            # errors.  Defaulting to the first peak keeps the API usable.
+            return 1
 
     # ------------------------------------------------------------------
     def start_analysis(
@@ -326,6 +352,11 @@ class SpanPeakSelector:
             # column distinguishes between different result types so the width
             # heading can remain unchanged.
             pass
+
+        peak_choice = self._prompt_peak()
+        if peak_choice is None:
+            return
+        self.current_peak = int(peak_choice)
 
         self.ranges.clear()
         self.analysis_func = analysis_func
@@ -369,6 +400,7 @@ class SpanPeakSelector:
 
         result = {
             "analysis": self.analysis_label,
+            "peak": int(self.current_peak),
             "pos_x": float(pos_field),
             "pos_y": float(pos_y),
             "neg_x": float(neg_field),
@@ -383,6 +415,7 @@ class SpanPeakSelector:
                 tk.END,
                 values=(
                     self.analysis_label,
+                    f"{self.current_peak}",
                     f"{pos_field:.3f}",
                     f"{pos_y:.3f}",
                     f"{neg_field:.3f}",
@@ -392,7 +425,10 @@ class SpanPeakSelector:
             )
 
         lines = [
-            f"Absorption: pos={r['pos_x']:.3f}, neg={r['neg_x']:.3f}, {r['analysis']}={r['width']:.3f}"
+            (
+                f"Peak {r['peak']}: pos={r['pos_x']:.3f}, neg={r['neg_x']:.3f}, "
+                f"{r['analysis']}={r['width']:.3f}"
+            )
             for r in self.results
         ]
 
@@ -479,7 +515,8 @@ class SpanPeakSelector:
             return
 
         result = {
-            "peak": float(self.selected_peak),
+            "analysis": "Lorentzian",
+            "peak": int(self.current_peak),
             "h_res": float(h_res),
             "delta": float(delta),
             "A": float(A),
@@ -491,7 +528,8 @@ class SpanPeakSelector:
                 "",
                 tk.END,
                 values=(
-                    f"{self.selected_peak:.3f}",
+                    "Lorentzian",
+                    f"{self.current_peak}",
                     f"{h_res:.3f}",
                     f"{delta:.3f}",
                     f"{A:.3f}",
@@ -502,6 +540,10 @@ class SpanPeakSelector:
     def fit_lorentzian(self) -> None:
         """Fit the Lorentzian model to the peak chosen via the slider."""
 
+        peak_choice = self._prompt_peak()
+        if peak_choice is None:
+            return
+        self.current_peak = int(peak_choice)
         self._fit_lorentzian()
 
     # ------------------------------------------------------------------
@@ -530,6 +572,7 @@ class SpanPeakSelector:
                     tk.END,
                     values=(
                         r["analysis"],
+                        f"{r['peak']}",
                         f"{r['pos_x']:.3f}",
                         f"{r['pos_y']:.3f}",
                         f"{r['neg_x']:.3f}",
@@ -546,7 +589,8 @@ class SpanPeakSelector:
                     "",
                     tk.END,
                     values=(
-                        f"{r['peak']:.3f}",
+                        r["analysis"],
+                        f"{r['peak']}",
                         f"{r['h_res']:.3f}",
                         f"{r['delta']:.3f}",
                         f"{r['A']:.3f}",
@@ -679,10 +723,11 @@ class SpanPeakSelector:
         )
         self.fit_btn.pack(padx=5, pady=5)
 
-        columns = ("analysis", "pos_x", "pos_y", "neg_x", "neg_y", "width")
+        columns = ("analysis", "peak", "pos_x", "pos_y", "neg_x", "neg_y", "width")
         self.tree = ttk.Treeview(panel, columns=columns, show="headings", height=5)
         headings = {
             "analysis": "Analysis",
+            "peak": "Peak",
             "pos_x": "Pos X",
             "pos_y": "Pos Y",
             "neg_x": "Neg X",
@@ -698,11 +743,12 @@ class SpanPeakSelector:
             self.tree.column(col, anchor=tk.CENTER)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        lorentz_columns = ("peak", "h_res", "delta", "A", "B")
+        lorentz_columns = ("analysis", "peak", "h_res", "delta", "A", "B")
         self.lorentz_tree = ttk.Treeview(
             panel, columns=lorentz_columns, show="headings", height=5
         )
         lorentz_headings = {
+            "analysis": "Analysis",
             "peak": "Peak",
             "h_res": "H_res",
             "delta": "Delta",
