@@ -104,3 +104,9 @@ def test_lorentzian_fit_overlay():
         assert len(selector.ax.lines) == 1
     plt.close(fig)
 
+
+def test_toolbar_has_default_tools_without_subplots():
+    tools = [item[0] for item in gui.NavigationToolbarNoSubplots.toolitems if item]
+    assert "Subplots" not in tools
+    assert "Pan" in tools and "Zoom" in tools
+
