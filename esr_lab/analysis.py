@@ -89,6 +89,36 @@ def calc_fwhm(
     return float(abs(field[pos_idx] - field[neg_idx]))
 
 
+def calc_peak_to_peak(
+    field: np.ndarray, intensity: np.ndarray, pos_idx: int, neg_idx: int
+) -> float:
+    r"""Compute the peak-to-peak separation :math:`\Delta H_{pp}`.
+
+    The peak-to-peak width of a derivative ESR line is defined as the distance
+    in magnetic-field units between the positive and the negative extrema.  It
+    is commonly denoted :math:`\Delta H_{pp}` and is a convenient measure for
+    the line width without converting to the absorption representation.
+
+    Parameters
+    ----------
+    field:
+        Array of magnetic-field values.
+    intensity:
+        Unused array of intensity values kept for API compatibility.
+    pos_idx:
+        Index of the positive peak.
+    neg_idx:
+        Index of the negative peak.
+
+    Returns
+    -------
+    float
+        The absolute field distance between the two peaks.
+    """
+
+    return float(abs(field[pos_idx] - field[neg_idx]))
+
+
 def fit_lorentzian_derivative(
     field: np.ndarray,
     intensity: np.ndarray,
