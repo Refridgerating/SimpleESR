@@ -1091,11 +1091,12 @@ class SpanPeakSelector:
         """List available analysis functions with short descriptions."""
         lines: list[str] = []
         for name, (desc, formula) in FUNCTION_DETAILS.items():
-            lines.append(f"{name}: {desc}")
+            lines.append(name)
+            lines.append(f"    {desc}")
             if formula:
                 lines.append(f"    {formula}")
             lines.append("")
-        messagebox.showinfo("Functions", "\n".join(lines))
+        messagebox.showinfo("Functions", "\n".join(lines).rstrip())
 
     # ------------------------------------------------------------------
     def _create_menu(self) -> None:

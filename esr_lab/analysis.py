@@ -329,11 +329,11 @@ FUNCTION_DETAILS: dict[str, tuple[str, str]] = {
     ),
     "calc_fwhm": (
         "Estimate the full width at half maximum (FWHM)",
-        "FWHM = |H_+ - H_-|",
+        r"$\mathrm{FWHM} = |H_{+} - H_{-}|$",
     ),
     "calc_peak_to_peak": (
-        "Compute the peak-to-peak separation \u0394H_pp",
-        "\u0394H_pp = |H_+ - H_-|",
+        r"Compute the peak-to-peak separation $\Delta H_{pp}$",
+        r"$\Delta H_{pp} = |H_{+} - H_{-}|$",
     ),
     "peak_finder": (
         "Automatically locate peak pairs in the provided data",
@@ -341,6 +341,6 @@ FUNCTION_DETAILS: dict[str, tuple[str, str]] = {
     ),
     "fit_lorentzian_derivative": (
         "Fit a derivative ESR line to a Lorentzian derivative model",
-        "dI/dH = A\u00b7\u2202_H L_abs(H) + B\u00b7\u2202_H L_disp(H)",
+        r"$\frac{dI}{dH} = A\partial_H L_{\text{abs}}(H) + B\partial_H L_{\text{disp}}(H)$",
     ),
 }
