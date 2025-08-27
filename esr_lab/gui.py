@@ -1074,29 +1074,33 @@ class SpanPeakSelector:
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
+        # Button rows for compact layout
+        button_row1 = tk.Frame(control_frame)
+        button_row1.pack(padx=5, pady=2, anchor="w")
+
         self.analyse_btn = ButtonCls(
-            control_frame,
+            button_row1,
             text="Analyse FWHM",
             command=self.start_analysis,
             **button_kwargs,
         )
-        self.analyse_btn.pack(fill=tk.X, padx=5, pady=2)
+        self.analyse_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
         self.dhpp_btn = ButtonCls(
-            control_frame,
+            button_row1,
             text="Analyse \u0394H_pp",
             command=self.start_peak_to_peak,
             **button_kwargs,
         )
-        self.dhpp_btn.pack(fill=tk.X, padx=5, pady=2)
+        self.dhpp_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
         self.find_btn = ButtonCls(
-            control_frame,
+            button_row1,
             text="Find Peaks",
             command=self.peak_finder,
             **button_kwargs,
         )
-        self.find_btn.pack(fill=tk.X, padx=5, pady=2)
+        self.find_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
         field_min = float(np.min(self.spectrum.field))
         field_max = float(np.max(self.spectrum.field))
@@ -1113,29 +1117,32 @@ class SpanPeakSelector:
         self.selected_peak = mid
         self.peak_slider.pack(fill=tk.X, padx=5, pady=2)
 
+        button_row2 = tk.Frame(control_frame)
+        button_row2.pack(padx=5, pady=(2, 5), anchor="w")
+
         self.fit_btn = ButtonCls(
-            control_frame,
+            button_row2,
             text="Fit Lorentzian",
             command=self.fit_lorentzian,
             **button_kwargs,
         )
-        self.fit_btn.pack(fill=tk.X, padx=5, pady=2)
+        self.fit_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
         self.integrate_btn = ButtonCls(
-            control_frame,
+            button_row2,
             text="Integrate Trace",
             command=self.integrate_trace,
             **button_kwargs,
         )
-        self.integrate_btn.pack(fill=tk.X, padx=5, pady=2)
+        self.integrate_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
         self.compare_btn = ButtonCls(
-            control_frame,
+            button_row2,
             text="Compare Spectra",
             command=self.compare_spectra,
             **button_kwargs,
         )
-        self.compare_btn.pack(fill=tk.X, padx=5, pady=(2, 5))
+        self.compare_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
         # ------------------------------------------------------------------
         # Results tables
