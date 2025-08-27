@@ -82,11 +82,13 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         window,
         get_active_index: Callable[[], int] | None = None,
         update_legend: Callable[[], None] | None = None,
+        set_label: Callable[[int, str], None] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(canvas, window, **kwargs)
         self.get_active_index = get_active_index or (lambda: 0)
         self.update_legend_callback = update_legend
+        self.set_label_callback = set_label
 
     def update_legend(self) -> None:
         if self.update_legend_callback:
@@ -179,28 +181,31 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         color_ent.bind("<KeyRelease>", _update_preview)
 
-        tk.Label(dialog, text="Marker").grid(row=9, column=0, sticky="e")
+        legend_init = line.get_label() if line is not None else ""
+        legend_ent = add_entry(9, "Legend", legend_init)
+
+        tk.Label(dialog, text="Marker").grid(row=10, column=0, sticky="e")
         marker_init = line.get_marker() if line is not None else "None"
         marker_var = tk.StringVar(value=marker_init)
         markers = ["None", "o", "s", "^", "D", "*", "x", "+"]
-        tk.OptionMenu(dialog, marker_var, *markers).grid(row=9, column=1, sticky="w")
+        tk.OptionMenu(dialog, marker_var, *markers).grid(row=10, column=1, sticky="w")
 
         # Scale selection
-        tk.Label(dialog, text="X scale").grid(row=10, column=0, sticky="e")
+        tk.Label(dialog, text="X scale").grid(row=11, column=0, sticky="e")
         xscale_var = tk.StringVar(value=ax.get_xscale())
-        tk.OptionMenu(dialog, xscale_var, "linear", "log").grid(row=10, column=1, sticky="w")
+        tk.OptionMenu(dialog, xscale_var, "linear", "log").grid(row=11, column=1, sticky="w")
 
-        tk.Label(dialog, text="Y scale").grid(row=11, column=0, sticky="e")
+        tk.Label(dialog, text="Y scale").grid(row=12, column=0, sticky="e")
         yscale_var = tk.StringVar(value=ax.get_yscale())
-        tk.OptionMenu(dialog, yscale_var, "linear", "log").grid(row=11, column=1, sticky="w")
+        tk.OptionMenu(dialog, yscale_var, "linear", "log").grid(row=12, column=1, sticky="w")
 
-        xticks_ent = add_entry(12, "X ticks", ", ".join(map(str, ax.get_xticks())))
-        yticks_ent = add_entry(13, "Y ticks", ", ".join(map(str, ax.get_yticks())))
+        xticks_ent = add_entry(13, "X ticks", ", ".join(map(str, ax.get_xticks())))
+        yticks_ent = add_entry(14, "Y ticks", ", ".join(map(str, ax.get_yticks())))
 
         major_var = tk.BooleanVar(value=ax.xaxis._major_tick_kw.get("gridOn", False))
-        tk.Checkbutton(dialog, text="Major grid", variable=major_var).grid(row=14, column=0, columnspan=2, sticky="w")
+        tk.Checkbutton(dialog, text="Major grid", variable=major_var).grid(row=15, column=0, columnspan=2, sticky="w")
         minor_var = tk.BooleanVar(value=ax.xaxis._minor_tick_kw.get("gridOn", False))
-        tk.Checkbutton(dialog, text="Minor grid", variable=minor_var).grid(row=15, column=0, columnspan=2, sticky="w")
+        tk.Checkbutton(dialog, text="Minor grid", variable=minor_var).grid(row=16, column=0, columnspan=2, sticky="w")
 
         def apply() -> None:
             try:
@@ -237,6 +242,17 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
                 marker_val = marker_var.get()
                 line.set_marker("" if marker_val == "None" else marker_val)
 
+                legend_text = legend_ent.get()
+                line.set_label(legend_text)
+                if self.set_label_callback is not None:
+                    try:
+                        idx = self.get_active_index()
+                    except Exception:
+                        idx = None
+                    if idx is not None:
+                        self.set_label_callback(idx, legend_text)
+                self.update_legend()
+
             ax.set_xscale(xscale_var.get())
             ax.set_yscale(yscale_var.get())
 
@@ -264,15 +280,15 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         try:
             ttk.Button(dialog, text="Apply", command=apply, style="Compact.TButton").grid(
-                row=16, column=0, pady=5
+                row=17, column=0, pady=5
             )
             ttk.Button(
                 dialog, text="Close", command=dialog.destroy, style="Compact.TButton"
-            ).grid(row=16, column=1, pady=5)
+            ).grid(row=17, column=1, pady=5)
         except Exception:
-            tk.Button(dialog, text="Apply", command=apply).grid(row=16, column=0, pady=5)
+            tk.Button(dialog, text="Apply", command=apply).grid(row=17, column=0, pady=5)
             tk.Button(dialog, text="Close", command=dialog.destroy).grid(
-                row=16, column=1, pady=5
+                row=17, column=1, pady=5
             )
 
 
@@ -1293,6 +1309,16 @@ class SpanPeakSelector:
         if self.ax is not None:
             self.ax.figure.canvas.draw_idle()
 
+    def _set_label(self, index: int, text: str) -> None:
+        """Update the stored label for a trace."""
+
+        if 0 <= index < len(self.labels):
+            self.labels[index] = text
+            if self.trace_combo is not None:
+                self.trace_combo["values"] = self.labels
+                if self.trace_var is not None and index == self.current:
+                    self.trace_var.set(text)
+
     # ------------------------------------------------------------------
     def update_legend(self) -> None:
         """Redraw the legend to reflect current line styles."""
@@ -1309,7 +1335,8 @@ class SpanPeakSelector:
                 labels.append(label)
 
         if handles:
-            self.ax.legend(handles, labels)
+            leg = self.ax.legend(handles, labels)
+            leg.set_draggable(True)
         else:
             leg = self.ax.get_legend()
             if leg is not None:
@@ -1566,6 +1593,7 @@ class SpanPeakSelector:
             plot_frame,
             get_active_index=lambda: self.current,
             update_legend=self.update_legend,
+            set_label=self._set_label,
             pack_toolbar=False,
         )
         toolbar.update()
