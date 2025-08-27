@@ -202,7 +202,9 @@ def test_multi_trace_results_isolated():
 
 
 def test_baseline_correction_manual():
-    spectrum = ESRSpectrum(field=np.linspace(0, 1, 3), intensity=np.ones(3))
+    spectrum = ESRSpectrum(
+        field=np.array([0.0, 1.0, 2.0]), intensity=np.array([0.0, 100.0, 0.0])
+    )
     selector = gui.SpanPeakSelector(spectrum)
     fig, selector.ax = plt.subplots()
     (line,) = selector.ax.plot(spectrum.field, spectrum.intensity)
@@ -213,12 +215,15 @@ def test_baseline_correction_manual():
     with patch(
         "esr_lab.gui.messagebox.askyesno", side_effect=[True, False]
     ), patch(
-        "esr_lab.gui.plt.ginput", return_value=[(0.0, 1.0), (1.0, 1.0)]
+        "esr_lab.gui.plt.ginput",
+        return_value=[(1.9, 100.0), (0.1, -50.0)],
     ), patch(
         "esr_lab.gui.baseline_correct", return_value=(corrected, corrected)
     ) as bc:
         selector.baseline_correction()
         bc.assert_called_once()
+        # ensure closest x-coordinate is used regardless of y
+        assert bc.call_args.kwargs["points"] == [(2.0, 0.0), (0.0, 0.0)]
         assert len(selector.spectra) == 2
         assert np.allclose(selector.spectra[-1].intensity, corrected)
         assert len(selector.trace_lines) == 2
