@@ -366,6 +366,60 @@ def test_table_columns_centered(monkeypatch):
     assert all(cfg.get("anchor") == gui.tk.CENTER for cfg in column_cfg.values())
 
 
+def test_window_maximized_on_show(monkeypatch):
+    spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+
+    class DummyTree:
+        def heading(self, *args, **kwargs):
+            pass
+
+        def column(self, *args, **kwargs):
+            pass
+
+        def pack(self, *args, **kwargs):
+            pass
+
+        def get_children(self):
+            return []
+
+    class DummyFrame:
+        def pack(self, *args, **kwargs):
+            pass
+
+    class DummyTk:
+        def __init__(self):
+            self.state_called = False
+
+        def title(self, *args, **kwargs):
+            pass
+
+        def state(self, *_args):
+            self.state_called = True
+
+        def update_idletasks(self):
+            pass
+
+        def mainloop(self):
+            pass
+
+    root = DummyTk()
+    monkeypatch.setattr(gui.tk, "Tk", lambda: root)
+    monkeypatch.setattr(gui.tk, "Frame", lambda *a, **k: DummyFrame())
+    monkeypatch.setattr(gui.tk, "Button", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(gui.tk, "Scale", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(gui.tk, "Label", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(gui.tk, "Canvas", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(gui.tk, "Scrollbar", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(gui.ttk, "Treeview", lambda *a, **k: DummyTree())
+    monkeypatch.setattr(gui, "FigureCanvasTkAgg", MagicMock())
+    monkeypatch.setattr(gui, "NavigationToolbarNoSubplots", MagicMock())
+
+    selector.show()
+
+    assert root.state_called
+
+
 def test_spectra_comparison_tabulated():
     spec1 = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))
