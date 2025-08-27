@@ -917,17 +917,24 @@ class SpanPeakSelector:
         self.root.title("ESR Spectrum")
 
         plot_frame = tk.Frame(self.root)
-        plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         panel = tk.Frame(self.root)
         panel.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.meta_label = tk.Label(panel, justify=tk.LEFT)
-        self.meta_label.pack(padx=5, pady=5)
+        # ------------------------------------------------------------------
+        # Metadata panel
+        meta_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
+        meta_frame.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(meta_frame, text="Metadata", font=("TkDefaultFont", 10, "bold")).pack(
+            anchor="w", padx=5, pady=(5, 0)
+        )
+        self.meta_label = tk.Label(meta_frame, justify=tk.LEFT)
+        self.meta_label.pack(anchor="w", padx=5, pady=(0, 5))
         self._update_metadata_display()
 
+        # ------------------------------------------------------------------
+        # Plot area with toolbar on top
         fig, self.ax = plt.subplots()
-        # Plot each spectrum to allow visual comparison.  Multiple traces are
-        # overlaid using Matplotlib's default colour cycle.
         for spec in self.spectra:
             self.ax.plot(spec.field, spec.intensity)
         if len(self.spectra) > 1:
@@ -944,43 +951,50 @@ class SpanPeakSelector:
             pack_toolbar=False,
         )
         toolbar.update()
+        toolbar.pack(side=tk.TOP, fill=tk.X)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # When multiple traces are loaded provide a combo box for selecting the
-        # active spectrum used for analysis.
+        # ------------------------------------------------------------------
+        # Controls
+        control_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
+        control_frame.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(control_frame, text="Controls", font=("TkDefaultFont", 10, "bold")).pack(
+            anchor="w", padx=5, pady=(5, 0)
+        )
+
         if len(self.spectra) > 1:
-            tk.Label(panel, text="Graph to be edited/analyzed").pack(padx=5, pady=(5, 0))
+            tk.Label(control_frame, text="Graph to be edited/analyzed").pack(
+                padx=5, pady=(0, 5)
+            )
             self.trace_var = tk.StringVar(value=self.labels[0])
             self.trace_combo = ttk.Combobox(
-                panel,
+                control_frame,
                 textvariable=self.trace_var,
                 values=self.labels,
                 state="readonly",
             )
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
-            self.trace_combo.pack(padx=5, pady=5)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
         self.analyse_btn = tk.Button(
-            panel, text="Analyse FWHM", command=self.start_analysis
+            control_frame, text="Analyse FWHM", command=self.start_analysis
         )
-        self.analyse_btn.pack(padx=5, pady=5)
+        self.analyse_btn.pack(fill=tk.X, padx=5, pady=2)
 
         self.dhpp_btn = tk.Button(
-            panel, text="Analyse \u0394H_pp", command=self.start_peak_to_peak
+            control_frame, text="Analyse \u0394H_pp", command=self.start_peak_to_peak
         )
-        self.dhpp_btn.pack(padx=5, pady=5)
+        self.dhpp_btn.pack(fill=tk.X, padx=5, pady=2)
 
         self.find_btn = tk.Button(
-            panel, text="Find Peaks", command=self.peak_finder
+            control_frame, text="Find Peaks", command=self.peak_finder
         )
-        self.find_btn.pack(padx=5, pady=5)
+        self.find_btn.pack(fill=tk.X, padx=5, pady=2)
 
         field_min = float(np.min(self.spectrum.field))
         field_max = float(np.max(self.spectrum.field))
-
         self.peak_slider = tk.Scale(
-            panel,
+            control_frame,
             from_=field_min,
             to=field_max,
             orient=tk.HORIZONTAL,
@@ -990,20 +1004,27 @@ class SpanPeakSelector:
         mid = (field_min + field_max) / 2
         self.peak_slider.set(mid)
         self.selected_peak = mid
-        self.peak_slider.pack(fill=tk.X, padx=5, pady=5)
+        self.peak_slider.pack(fill=tk.X, padx=5, pady=2)
 
         self.fit_btn = tk.Button(
-            panel, text="Fit Lorentzian", command=self.fit_lorentzian
+            control_frame, text="Fit Lorentzian", command=self.fit_lorentzian
         )
-        self.fit_btn.pack(padx=5, pady=5)
+        self.fit_btn.pack(fill=tk.X, padx=5, pady=2)
 
         self.compare_btn = tk.Button(
-            panel, text="Compare Spectra", command=self.compare_spectra
+            control_frame, text="Compare Spectra", command=self.compare_spectra
         )
-        self.compare_btn.pack(padx=5, pady=5)
+        self.compare_btn.pack(fill=tk.X, padx=5, pady=(2, 5))
 
+        # ------------------------------------------------------------------
+        # Results tables
+        result_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
+        result_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        tk.Label(
+            result_frame, text="Analysis Results", font=("TkDefaultFont", 10, "bold")
+        ).pack(anchor="w", padx=5, pady=(5, 0))
         columns = ("analysis", "peak", "pos_x", "pos_y", "neg_x", "neg_y", "width")
-        self.tree = ttk.Treeview(panel, columns=columns, show="headings", height=5)
+        self.tree = ttk.Treeview(result_frame, columns=columns, show="headings", height=5)
         headings = {
             "analysis": "Analysis",
             "peak": "Peak",
@@ -1011,20 +1032,21 @@ class SpanPeakSelector:
             "pos_y": "Pos Y",
             "neg_x": "Neg X",
             "neg_y": "Neg Y",
-            # The value column holds either FWHM or ΔH_pp results depending on
-            # the active analysis.  Keeping a generic heading allows appending
-            # results from multiple analyses without clearing the table.
             "width": "Value",
         }
         for col, text in headings.items():
             self.tree.heading(col, text=text)
-            # Center values in each column for improved readability
             self.tree.column(col, anchor=tk.CENTER)
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
+        lorentz_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
+        lorentz_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        tk.Label(
+            lorentz_frame, text="Lorentzian Fits", font=("TkDefaultFont", 10, "bold")
+        ).pack(anchor="w", padx=5, pady=(5, 0))
         lorentz_columns = ("analysis", "peak", "h_res", "delta", "A", "B")
         self.lorentz_tree = ttk.Treeview(
-            panel, columns=lorentz_columns, show="headings", height=5
+            lorentz_frame, columns=lorentz_columns, show="headings", height=5
         )
         lorentz_headings = {
             "analysis": "Analysis",
@@ -1036,13 +1058,17 @@ class SpanPeakSelector:
         }
         for col, text in lorentz_headings.items():
             self.lorentz_tree.heading(col, text=text)
-            # Center Lorentzian fit results to keep the table consistent
             self.lorentz_tree.column(col, anchor=tk.CENTER)
-        self.lorentz_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.lorentz_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
+        compare_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
+        compare_frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(
+            compare_frame, text="Comparison", font=("TkDefaultFont", 10, "bold")
+        ).pack(anchor="w", padx=5, pady=(5, 0))
         compare_cols = ("param", "first", "second", "diff")
         self.compare_tree = ttk.Treeview(
-            panel, columns=compare_cols, show="headings", height=6
+            compare_frame, columns=compare_cols, show="headings", height=6
         )
         compare_headings = {
             "param": "Parameter",
@@ -1053,12 +1079,10 @@ class SpanPeakSelector:
         for col, text in compare_headings.items():
             self.compare_tree.heading(col, text=text)
             self.compare_tree.column(col, anchor=tk.CENTER)
-        self.compare_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.compare_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
         # Ensure the tables reflect any results already calculated before the GUI
-        # was shown (useful for tests or scripted usage).
         self._refresh_tables()
-
         self.root.mainloop()
 
 
