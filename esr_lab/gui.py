@@ -919,10 +919,8 @@ class SpanPeakSelector:
                         "At least two points are required for manual baseline correction.",
                     )
                     return
-                for x, y in raw:
-                    idx = int(
-                        np.argmin((field - x) ** 2 + (intensity - y) ** 2)
-                    )
+                for x, _y in raw:
+                    idx = int(np.argmin((field - x) ** 2))
                     pts.append((float(field[idx]), float(intensity[idx])))
             else:
                 count_var = tk.StringVar(value="Selected points: 0")
@@ -942,12 +940,7 @@ class SpanPeakSelector:
                 def onclick(event):
                     if event.inaxes != self.ax:
                         return
-                    idx = int(
-                        np.argmin(
-                            (field - event.xdata) ** 2
-                            + (intensity - event.ydata) ** 2
-                        )
-                    )
+                    idx = int(np.argmin((field - event.xdata) ** 2))
                     x = float(field[idx])
                     y = float(intensity[idx])
                     pts.append((x, y))
