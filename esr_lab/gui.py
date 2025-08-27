@@ -19,6 +19,7 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
 from typing import Callable
+from scipy.integrate import cumulative_trapezoid
 
 from .analysis import (
     calc_fwhm,
@@ -333,6 +334,9 @@ class SpanPeakSelector:
         ]
         self.auto_peaks = self.auto_peaks_all[self.current]
 
+        # Line objects of integrated absorption spectra per trace
+        self.abs_lines: list[Line2D | None] = [None for _ in self.spectra]
+
         # GUI related attributes are initialised lazily in ``show`` so that the
         # class can be instantiated in environments without a display (e.g. the
         # test suite).
@@ -344,6 +348,7 @@ class SpanPeakSelector:
         self.dhpp_btn: tk.Button | ttk.Button | None = None
         self.find_btn: tk.Button | ttk.Button | None = None
         self.fit_btn: tk.Button | ttk.Button | None = None
+        self.integrate_btn: tk.Button | ttk.Button | None = None
         self.compare_btn: tk.Button | ttk.Button | None = None
         self.compare_tree: ttk.Treeview | None = None
         self.trace_combo: ttk.Combobox | None = None
@@ -840,6 +845,35 @@ class SpanPeakSelector:
             )
 
     # ------------------------------------------------------------------
+    def integrate_trace(self) -> None:
+        """Integrate the selected derivative trace and plot the absorption spectrum."""
+
+        # Operate on the currently selected spectrum
+        self.spectrum = self.spectra[self.current]
+        absorption = cumulative_trapezoid(
+            self.spectrum.intensity, self.spectrum.field, initial=0
+        )
+        absorption -= float(np.mean(absorption))
+
+        if self.ax is None:
+            return
+
+        # Remove an existing absorption line for this trace
+        existing = self.abs_lines[self.current]
+        if existing is not None:
+            existing.remove()
+
+        (line,) = self.ax.plot(
+            self.spectrum.field,
+            absorption,
+            label=f"{self.labels[self.current]} (absorption)",
+        )
+        self.abs_lines[self.current] = line
+
+        self.ax.legend()
+        self.ax.figure.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
     def save_results(self, path: Path) -> None:
         """Save analysed peak data to a CSV file.
 
@@ -1086,6 +1120,14 @@ class SpanPeakSelector:
             **button_kwargs,
         )
         self.fit_btn.pack(fill=tk.X, padx=5, pady=2)
+
+        self.integrate_btn = ButtonCls(
+            control_frame,
+            text="Integrate Trace",
+            command=self.integrate_trace,
+            **button_kwargs,
+        )
+        self.integrate_btn.pack(fill=tk.X, padx=5, pady=2)
 
         self.compare_btn = ButtonCls(
             control_frame,
