@@ -1406,9 +1406,61 @@ class SpanPeakSelector:
             ButtonCls = tk.Button
             button_kwargs = {}
 
+        # Keep the analysis panel at roughly a quarter of the window width.  A
+        # simple two-column grid layout with weights of 3:1 ensures that the
+        # plot takes up 75% of the available space while the panel receives the
+        # remaining 25%.  The lightweight dummy Tk classes used in tests do not
+        # implement ``grid`` methods, so we only configure the grid if available
+        # and fall back to ``pack`` otherwise.
+        use_grid = all(
+            hasattr(self.root, attr)
+            for attr in ("grid_rowconfigure", "grid_columnconfigure")
+        )
+        if use_grid:
+            self.root.grid_rowconfigure(0, weight=1)
+            self.root.grid_columnconfigure(0, weight=3)
+            self.root.grid_columnconfigure(1, weight=1)
+
+        def _wrap_buttons(frame: tk.Frame) -> None:
+            """Reposition buttons when the available width changes.
+
+            Widgets are arranged from left to right and wrapped onto a new row if
+            the next button would exceed the frame's current width.  This emulates
+            a flow layout so that controls remain accessible even when the
+            analysis panel becomes narrow."""
+
+            if not (hasattr(frame, "bind") and hasattr(frame, "winfo_children")):
+                return
+
+            def _do_wrap(event: tk.Event | None = None) -> None:
+                width = event.width if event else getattr(frame, "winfo_width", lambda: 0)()
+                if width <= 1:
+                    return
+                x = 0
+                row = 0
+                col = 0
+                pad = 4
+                for w in frame.winfo_children():
+                    getattr(w, "update_idletasks", lambda: None)()
+                    w_width = getattr(w, "winfo_reqwidth", lambda: 0)()
+                    if x + w_width > width and x > 0:
+                        row += 1
+                        col = 0
+                        x = 0
+                    if hasattr(w, "grid"):
+                        w.grid(row=row, column=col, padx=2, pady=2, sticky="w")
+                    col += 1
+                    x += w_width + pad
+
+            frame.bind("<Configure>", _do_wrap)
+            _do_wrap()
+
         try:
             plot_container = tk.Frame(self.root)
-            plot_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+            if use_grid and hasattr(plot_container, "grid"):
+                plot_container.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+            else:
+                plot_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
             plot_canvas = tk.Canvas(plot_container, highlightthickness=0)
             plot_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             plot_scroll = tk.Scrollbar(plot_container, orient=tk.VERTICAL, command=plot_canvas.yview)
@@ -1439,12 +1491,18 @@ class SpanPeakSelector:
             )
         except Exception:
             plot_frame = tk.Frame(self.root)
-            plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+            if use_grid and hasattr(plot_frame, "grid"):
+                plot_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+            else:
+                plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         self.plot_frame = plot_frame
 
         try:
             panel_container = tk.Frame(self.root)
-            panel_container.pack(side=tk.RIGHT, fill=tk.Y)
+            if use_grid and hasattr(panel_container, "grid"):
+                panel_container.grid(row=0, column=1, sticky="nsew")
+            else:
+                panel_container.pack(side=tk.RIGHT, fill=tk.Y)
             panel_canvas = tk.Canvas(panel_container, highlightthickness=0)
             panel_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             scrollbar = tk.Scrollbar(panel_container, orient=tk.VERTICAL, command=panel_canvas.yview)
@@ -1475,7 +1533,10 @@ class SpanPeakSelector:
             )
         except Exception:
             panel = tk.Frame(self.root)
-            panel.pack(side=tk.RIGHT, fill=tk.Y)
+            if use_grid and hasattr(panel, "grid"):
+                panel.grid(row=0, column=1, sticky="nsew")
+            else:
+                panel.pack(side=tk.RIGHT, fill=tk.Y)
 
         # ------------------------------------------------------------------
         # Metadata panel
@@ -1552,7 +1613,7 @@ class SpanPeakSelector:
 
         # Button rows for compact layout
         button_row1 = tk.Frame(control_frame)
-        button_row1.pack(padx=5, pady=2, anchor="w")
+        button_row1.pack(fill=tk.X, padx=5, pady=2)
 
         self.analyse_btn = ButtonCls(
             button_row1,
@@ -1560,23 +1621,19 @@ class SpanPeakSelector:
             command=self.start_analysis,
             **button_kwargs,
         )
-        self.analyse_btn.pack(side=tk.LEFT, padx=2, pady=2)
-
         self.dhpp_btn = ButtonCls(
             button_row1,
             text="Analyse \u0394H_pp",
             command=self.start_peak_to_peak,
             **button_kwargs,
         )
-        self.dhpp_btn.pack(side=tk.LEFT, padx=2, pady=2)
-
         self.find_btn = ButtonCls(
             button_row1,
             text="Find Peaks",
             command=self.peak_finder,
             **button_kwargs,
         )
-        self.find_btn.pack(side=tk.LEFT, padx=2, pady=2)
+        _wrap_buttons(button_row1)
 
         field_min = float(np.min(self.spectrum.field))
         field_max = float(np.max(self.spectrum.field))
@@ -1594,7 +1651,7 @@ class SpanPeakSelector:
         self.peak_slider.pack(fill=tk.X, padx=5, pady=2)
 
         button_row2 = tk.Frame(control_frame)
-        button_row2.pack(padx=5, pady=(2, 5), anchor="w")
+        button_row2.pack(fill=tk.X, padx=5, pady=(2, 5))
 
         self.fit_btn = ButtonCls(
             button_row2,
@@ -1602,31 +1659,25 @@ class SpanPeakSelector:
             command=self.fit_lorentzian,
             **button_kwargs,
         )
-        self.fit_btn.pack(side=tk.LEFT, padx=2, pady=2)
-
         self.integrate_btn = ButtonCls(
             button_row2,
             text="Integrate Trace",
             command=self.integrate_trace,
             **button_kwargs,
         )
-        self.integrate_btn.pack(side=tk.LEFT, padx=2, pady=2)
-
         self.baseline_btn = ButtonCls(
             button_row2,
             text="Baseline Correct",
             command=self.baseline_correction,
             **button_kwargs,
         )
-        self.baseline_btn.pack(side=tk.LEFT, padx=2, pady=2)
-
         self.compare_btn = ButtonCls(
             button_row2,
             text="Compare Spectra",
             command=self.compare_spectra,
             **button_kwargs,
         )
-        self.compare_btn.pack(side=tk.LEFT, padx=2, pady=2)
+        _wrap_buttons(button_row2)
 
         # ------------------------------------------------------------------
         # Peak position table
