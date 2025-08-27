@@ -346,6 +346,7 @@ class SpanPeakSelector:
         # test suite).
         self.root: tk.Tk | None = None
         self.ax = None
+        self.peak_tree: ttk.Treeview | None = None
         self.tree: ttk.Treeview | None = None
         self.lorentz_tree: ttk.Treeview | None = None
         self.analyse_btn: tk.Button | ttk.Button | None = None
@@ -620,6 +621,7 @@ class SpanPeakSelector:
 
         self.auto_peaks.clear()
         self.auto_peaks.extend(pairs)
+        self._refresh_tables()
         messagebox.showinfo("Peak Finder", "Peaks stored for analysis")
 
     # ------------------------------------------------------------------
@@ -893,6 +895,22 @@ class SpanPeakSelector:
 
     def _refresh_tables(self) -> None:
         """Refresh the analysis tables for the currently active trace."""
+
+        if self.peak_tree is not None:
+            for item in self.peak_tree.get_children():
+                self.peak_tree.delete(item)
+            label = self.labels[self.current]
+            for i, (p, n) in enumerate(self.auto_peaks):
+                self.peak_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        label,
+                        f"{i + 1}",
+                        f"{self.spectrum.field[p]:.3f}",
+                        f"{self.spectrum.field[n]:.3f}",
+                    ),
+                )
 
         if self.tree is not None:
             for item in self.tree.get_children():
@@ -1189,6 +1207,28 @@ class SpanPeakSelector:
             **button_kwargs,
         )
         self.compare_btn.pack(side=tk.LEFT, padx=2, pady=2)
+
+        # ------------------------------------------------------------------
+        # Peak position table
+        peak_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
+        peak_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        tk.Label(
+            peak_frame, text="Peak position", font=("TkDefaultFont", 10, "bold")
+        ).pack(anchor="w", padx=5, pady=(5, 0))
+        peak_columns = ("trace", "peak", "pos", "neg")
+        self.peak_tree = ttk.Treeview(
+            peak_frame, columns=peak_columns, show="headings", height=5
+        )
+        peak_headings = {
+            "trace": "Trace",
+            "peak": "Peak",
+            "pos": "Pos X",
+            "neg": "Neg X",
+        }
+        for col, text in peak_headings.items():
+            self.peak_tree.heading(col, text=text)
+            self.peak_tree.column(col, anchor=tk.CENTER)
+        self.peak_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
         # ------------------------------------------------------------------
         # Results tables
