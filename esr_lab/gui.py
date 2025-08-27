@@ -1064,8 +1064,40 @@ class SpanPeakSelector:
 
         plot_frame = tk.Frame(self.root)
         plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
-        panel = tk.Frame(self.root)
-        panel.pack(side=tk.RIGHT, fill=tk.Y)
+        try:
+            panel_container = tk.Frame(self.root)
+            panel_container.pack(side=tk.RIGHT, fill=tk.Y)
+            panel_canvas = tk.Canvas(panel_container, highlightthickness=0)
+            panel_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar = tk.Scrollbar(panel_container, orient=tk.VERTICAL, command=panel_canvas.yview)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            panel_canvas.configure(yscrollcommand=scrollbar.set)
+
+            panel = tk.Frame(panel_canvas)
+            panel_id = panel_canvas.create_window((0, 0), window=panel, anchor="nw")
+
+            def _on_panel_configure(_event: tk.Event) -> None:
+                panel_canvas.configure(scrollregion=panel_canvas.bbox("all"))
+
+            panel.bind("<Configure>", _on_panel_configure)
+
+            def _on_canvas_configure(event: tk.Event) -> None:
+                panel_canvas.itemconfigure(panel_id, width=event.width)
+
+            panel_canvas.bind("<Configure>", _on_canvas_configure)
+
+            def _on_mousewheel(event: tk.Event) -> None:
+                panel_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+            panel_canvas.bind(
+                "<Enter>", lambda _e: panel_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            )
+            panel_canvas.bind(
+                "<Leave>", lambda _e: panel_canvas.unbind_all("<MouseWheel>")
+            )
+        except Exception:
+            panel = tk.Frame(self.root)
+            panel.pack(side=tk.RIGHT, fill=tk.Y)
 
         # ------------------------------------------------------------------
         # Metadata panel
