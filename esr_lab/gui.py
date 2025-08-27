@@ -757,7 +757,7 @@ class SpanPeakSelector:
         self.ax.figure.canvas.draw_idle()
 
         # Show residual plot
-        res_plot = plot_residuals(field, residuals, show=self.plot_frame is None)
+        res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
         if self.plot_frame is not None and isinstance(res_plot, tuple):
             fig_r, _ax_r = res_plot
             canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)

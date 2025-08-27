@@ -128,6 +128,7 @@ def configure_subplot(
 def plot_residuals(
     field: Sequence[float],
     residuals: Sequence[float],
+    peak: float,
     *,
     show: bool = True,
 ):
@@ -143,6 +144,8 @@ def plot_residuals(
         Magnetic-field values of the data points.
     residuals:
         Residuals ``observed - fitted`` corresponding to ``field``.
+    peak:
+        Resonance field for which the fit was performed.
     """
 
     fig, ax = plt.subplots()
@@ -150,7 +153,7 @@ def plot_residuals(
     ax.plot(field, residuals, "o")
     ax.set_xlabel("Magnetic Field")
     ax.set_ylabel("Residuals")
-    ax.set_title("Fit Residuals")
+    ax.set_title(f"Residual fit peak {peak}")
     if show:
         plt.show()
     return fig, ax
