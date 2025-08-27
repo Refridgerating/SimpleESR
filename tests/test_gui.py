@@ -80,6 +80,32 @@ def test_peak_to_peak_analysis():
     plt.close(fig)
 
 
+def test_peak_finder_marks_peaks():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.array([0, 1, 0, -1, 0]))
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+
+    markers: list[MagicMock] = []
+
+    def fake_plot(*args, **kwargs):
+        m = MagicMock()
+        markers.append(m)
+        return [m]
+
+    selector.ax.plot = MagicMock(side_effect=fake_plot)
+
+    with patch("esr_lab.gui.auto_peak_finder", return_value=[(1, 3)]), \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
+        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+        patch("esr_lab.gui.messagebox.showinfo"):
+        selector.peak_finder()
+
+    assert selector.ax.plot.call_count == 2
+    assert all(m.remove.call_count == 1 for m in markers)
+    assert selector.auto_peaks == [(1, 3)]
+    plt.close(fig)
+
+
 def test_results_persist_across_analyses():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)

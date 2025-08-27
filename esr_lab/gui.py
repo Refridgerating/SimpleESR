@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, colorchooser, simpledialog
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
@@ -524,7 +525,16 @@ class SpanPeakSelector:
         self.start_analysis(calc_peak_to_peak, "\u0394H_pp")
 
     def peak_finder(self) -> None:
-        """Automatically detect peak pairs and store them for analysis."""
+        """Automatically detect peak pairs and store them for analysis.
+
+        Temporary markers are drawn on the plot to aid the user in verifying
+        the detected peak positions.  The markers are removed once the user
+        decides whether to accept the peaks.
+        """
+
+        # Always operate on the currently selected trace
+        self.spectrum = self.spectra[self.current]
+        self.auto_peaks = self.auto_peaks_all[self.current]
 
         try:
             num = simpledialog.askinteger(
@@ -542,6 +552,24 @@ class SpanPeakSelector:
             messagebox.showerror("Peak Finder", str(exc))
             return
 
+        markers: list[Line2D] = []
+        if self.ax is not None:
+            for p, n in pairs:
+                (pos_marker,) = self.ax.plot(
+                    self.spectrum.field[p],
+                    self.spectrum.intensity[p],
+                    marker="o",
+                    color="red",
+                )
+                (neg_marker,) = self.ax.plot(
+                    self.spectrum.field[n],
+                    self.spectrum.intensity[n],
+                    marker="o",
+                    color="blue",
+                )
+                markers.extend([pos_marker, neg_marker])
+            self.ax.figure.canvas.draw_idle()
+
         lines = [
             (
                 f"Peak {i + 1}: pos={self.spectrum.field[p]:.3f}, "
@@ -552,6 +580,12 @@ class SpanPeakSelector:
         accept = messagebox.askyesno(
             "Peak Finder", "\n".join(lines) + "\nAccept peaks?"
         )
+
+        for m in markers:
+            m.remove()
+        if self.ax is not None:
+            self.ax.figure.canvas.draw_idle()
+
         if not accept:
             return
 
