@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.widgets import SpanSelector
+from matplotlib.widgets import SpanSelector, Cursor
 from typing import Callable
 from scipy.integrate import cumulative_trapezoid
 
@@ -27,6 +27,7 @@ from .analysis import (
     fit_lorentzian_derivative,
     calc_peak_to_peak,
     peak_finder as auto_peak_finder,
+    baseline_correct,
     FUNCTION_DETAILS,
 )
 from .io import ESRLoader
@@ -356,6 +357,7 @@ class SpanPeakSelector:
         self.find_btn: tk.Button | ttk.Button | None = None
         self.fit_btn: tk.Button | ttk.Button | None = None
         self.integrate_btn: tk.Button | ttk.Button | None = None
+        self.baseline_btn: tk.Button | ttk.Button | None = None
         self.compare_btn: tk.Button | ttk.Button | None = None
         self.compare_tree: ttk.Treeview | None = None
         self.trace_combo: ttk.Combobox | None = None
@@ -871,6 +873,49 @@ class SpanPeakSelector:
             )
 
     # ------------------------------------------------------------------
+    def baseline_correction(self) -> None:
+        """Apply a baseline correction to the currently selected trace."""
+
+        if self.ax is None:
+            return
+
+        use_auto = messagebox.askyesno(
+            "Baseline Correction",
+            "Use automatic baseline fit?\nSelect 'No' for manual placement.",
+        )
+
+        field = self.spectrum.field
+        intensity = self.spectrum.intensity
+
+        if use_auto:
+            corrected, _baseline = baseline_correct(field, intensity)
+        else:
+            fig = self.ax.figure
+            plt.figure(fig.number)
+            cursor = Cursor(self.ax, useblit=True, color="red", linewidth=1)
+            try:
+                pts = plt.ginput(n=-1, timeout=-1)
+            except Exception:
+                pts = []
+            finally:
+                try:
+                    cursor.disconnect_events()
+                except Exception:
+                    pass
+            if len(pts) < 2:
+                messagebox.showwarning(
+                    "Baseline Correction",
+                    "At least two points are required for manual baseline correction.",
+                )
+                return
+            corrected, _baseline = baseline_correct(field, intensity, points=pts)
+
+        self.spectrum.intensity = corrected
+        line = self.trace_lines[self.current]
+        line.set_ydata(corrected)
+        self.ax.figure.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
     def integrate_trace(self) -> None:
         """Integrate the selected derivative trace and plot the absorption spectrum."""
 
@@ -1339,6 +1384,14 @@ class SpanPeakSelector:
             **button_kwargs,
         )
         self.integrate_btn.pack(side=tk.LEFT, padx=2, pady=2)
+
+        self.baseline_btn = ButtonCls(
+            button_row2,
+            text="Baseline Correct",
+            command=self.baseline_correction,
+            **button_kwargs,
+        )
+        self.baseline_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
         self.compare_btn = ButtonCls(
             button_row2,

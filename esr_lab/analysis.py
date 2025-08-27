@@ -211,6 +211,48 @@ def peak_finder(
     return pairs
 
 
+def baseline_correct(
+    field: np.ndarray,
+    intensity: np.ndarray,
+    points: list[tuple[float, float]] | None = None,
+    degree: int = 1,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Perform a simple polynomial baseline correction.
+
+    Parameters
+    ----------
+    field:
+        Array of magnetic-field values.
+    intensity:
+        Recorded intensity values corresponding to ``field``.
+    points:
+        Optional list of ``(x, y)`` coordinates defining the baseline.  When
+        provided a polynomial is fitted through these points.  Otherwise a
+        polynomial of ``degree`` is fitted to the entire trace.
+    degree:
+        Degree of the polynomial used for automatic baseline fitting.  The
+        default of ``1`` corresponds to a linear baseline.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        The baseline corrected intensity and the fitted baseline evaluated over
+        ``field``.
+    """
+
+    if points:
+        xp = np.array([p[0] for p in points], dtype=float)
+        yp = np.array([p[1] for p in points], dtype=float)
+        deg = min(len(xp) - 1, 3)
+        coeffs = np.polyfit(xp, yp, deg)
+    else:
+        coeffs = np.polyfit(field, intensity, degree)
+
+    baseline = np.polyval(coeffs, field)
+    corrected = intensity - baseline
+    return corrected.astype(float), baseline.astype(float)
+
+
 def chi_square(
     observed: np.ndarray,
     expected: np.ndarray,
@@ -337,6 +379,10 @@ FUNCTION_DETAILS: dict[str, tuple[str, str]] = {
     ),
     "peak_finder": (
         "Automatically locate peak pairs in the provided data",
+        "",
+    ),
+    "baseline_correct": (
+        "Perform a polynomial baseline correction",
         "",
     ),
     "fit_lorentzian_derivative": (

@@ -8,6 +8,7 @@ from esr_lab import (
     calc_peak_to_peak,
     peak_finder,
     chi_square,
+    baseline_correct,
 )
 
 
@@ -79,3 +80,19 @@ def test_peak_finder_pairs():
     pairs = peak_finder(field, intensity)
 
     assert pairs == [(5, 7), (11, 13)]
+
+
+def test_baseline_correct_manual_and_auto():
+    field = np.linspace(0, 10, 11)
+    baseline = 0.5 * field + 1.0
+    signal = np.zeros_like(field)
+    intensity = baseline + signal
+
+    corrected, fitted = baseline_correct(
+        field, intensity, points=[(0.0, baseline[0]), (10.0, baseline[-1])]
+    )
+    assert np.allclose(corrected, signal)
+    assert np.allclose(fitted, baseline)
+
+    corrected_auto, _ = baseline_correct(field, intensity)
+    assert np.allclose(corrected_auto, signal)
