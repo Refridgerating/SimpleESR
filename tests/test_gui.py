@@ -106,6 +106,27 @@ def test_peak_finder_marks_peaks():
     plt.close(fig)
 
 
+def test_peak_finder_tabulates_positions():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.array([0, 1, 0, -1, 0]))
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.ax = None
+    tree = MagicMock()
+    tree.get_children.return_value = []
+    selector.peak_tree = tree
+    with patch("esr_lab.gui.auto_peak_finder", return_value=[(1, 3)]), \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
+        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+        patch("esr_lab.gui.messagebox.showinfo"):
+        selector.peak_finder()
+    tree.insert.assert_called_once()
+    assert tree.insert.call_args.kwargs["values"] == (
+        selector.labels[0],
+        "1",
+        "1.000",
+        "3.000",
+    )
+
+
 def test_results_persist_across_analyses():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
