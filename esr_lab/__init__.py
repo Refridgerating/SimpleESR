@@ -11,6 +11,7 @@ from .analysis import (
     calc_peak_to_peak,
     peak_finder,
     chi_square,
+    baseline_correct,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "calc_peak_to_peak",
     "peak_finder",
     "chi_square",
+    "baseline_correct",
 ]

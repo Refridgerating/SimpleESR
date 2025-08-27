@@ -200,6 +200,27 @@ def test_multi_trace_results_isolated():
     plt.close(fig)
 
 
+def test_baseline_correction_manual():
+    spectrum = ESRSpectrum(field=np.linspace(0, 1, 3), intensity=np.ones(3))
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+    line = MagicMock()
+    selector.trace_lines = [line]
+    selector.ax.figure.canvas.draw_idle = MagicMock()
+
+    corrected = np.zeros(3)
+    with patch("esr_lab.gui.messagebox.askyesno", return_value=False), \
+        patch("esr_lab.gui.Cursor"), \
+        patch("esr_lab.gui.plt.ginput", return_value=[(0.0, 1.0), (1.0, 1.0)]), \
+        patch("esr_lab.gui.baseline_correct", return_value=(corrected, corrected)) as bc:
+        selector.baseline_correction()
+        bc.assert_called_once()
+        line.set_ydata.assert_called_once_with(corrected)
+        assert np.allclose(selector.spectrum.intensity, corrected)
+
+    plt.close(fig)
+
+
 def test_lorentzian_fit_overlay():
     spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
