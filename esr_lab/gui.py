@@ -152,7 +152,17 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
                 color_ent.insert(0, color)
                 preview.config(bg=color)
 
-        tk.Button(color_frame, text="Pick", command=choose_color).grid(row=0, column=2, padx=5)
+        try:
+            ttk.Button(
+                color_frame,
+                text="Pick",
+                command=choose_color,
+                style="Compact.TButton",
+            ).grid(row=0, column=2, padx=5)
+        except Exception:
+            tk.Button(color_frame, text="Pick", command=choose_color).grid(
+                row=0, column=2, padx=5
+            )
 
         def _update_preview(*_args: object) -> None:
             color_val = color_ent.get().strip()
@@ -246,8 +256,18 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
             self.canvas.draw_idle()
 
-        tk.Button(dialog, text="Apply", command=apply).grid(row=16, column=0, pady=5)
-        tk.Button(dialog, text="Close", command=dialog.destroy).grid(row=16, column=1, pady=5)
+        try:
+            ttk.Button(dialog, text="Apply", command=apply, style="Compact.TButton").grid(
+                row=16, column=0, pady=5
+            )
+            ttk.Button(
+                dialog, text="Close", command=dialog.destroy, style="Compact.TButton"
+            ).grid(row=16, column=1, pady=5)
+        except Exception:
+            tk.Button(dialog, text="Apply", command=apply).grid(row=16, column=0, pady=5)
+            tk.Button(dialog, text="Close", command=dialog.destroy).grid(
+                row=16, column=1, pady=5
+            )
 
 
 
@@ -320,11 +340,11 @@ class SpanPeakSelector:
         self.ax = None
         self.tree: ttk.Treeview | None = None
         self.lorentz_tree: ttk.Treeview | None = None
-        self.analyse_btn: tk.Button | None = None
-        self.dhpp_btn: tk.Button | None = None
-        self.find_btn: tk.Button | None = None
-        self.fit_btn: tk.Button | None = None
-        self.compare_btn: tk.Button | None = None
+        self.analyse_btn: tk.Button | ttk.Button | None = None
+        self.dhpp_btn: tk.Button | ttk.Button | None = None
+        self.find_btn: tk.Button | ttk.Button | None = None
+        self.fit_btn: tk.Button | ttk.Button | None = None
+        self.compare_btn: tk.Button | ttk.Button | None = None
         self.compare_tree: ttk.Treeview | None = None
         self.trace_combo: ttk.Combobox | None = None
         self.trace_var: tk.StringVar | None = None
@@ -950,6 +970,16 @@ class SpanPeakSelector:
         self.root = tk.Tk()
         self.root.title("ESR Spectrum")
 
+        ButtonCls: type[tk.Button] | type[ttk.Button] = ttk.Button
+        button_kwargs: dict[str, object] = {"style": "Compact.TButton"}
+        try:
+            style = ttk.Style(self.root)
+            style.configure("Compact.TButton", font=("TkDefaultFont", 9, "bold"), padding=(5, 2))
+            style.configure("Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
+        except Exception:
+            ButtonCls = tk.Button
+            button_kwargs = {}
+
         plot_frame = tk.Frame(self.root)
         plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         panel = tk.Frame(self.root)
@@ -1010,18 +1040,27 @@ class SpanPeakSelector:
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
-        self.analyse_btn = tk.Button(
-            control_frame, text="Analyse FWHM", command=self.start_analysis
+        self.analyse_btn = ButtonCls(
+            control_frame,
+            text="Analyse FWHM",
+            command=self.start_analysis,
+            **button_kwargs,
         )
         self.analyse_btn.pack(fill=tk.X, padx=5, pady=2)
 
-        self.dhpp_btn = tk.Button(
-            control_frame, text="Analyse \u0394H_pp", command=self.start_peak_to_peak
+        self.dhpp_btn = ButtonCls(
+            control_frame,
+            text="Analyse \u0394H_pp",
+            command=self.start_peak_to_peak,
+            **button_kwargs,
         )
         self.dhpp_btn.pack(fill=tk.X, padx=5, pady=2)
 
-        self.find_btn = tk.Button(
-            control_frame, text="Find Peaks", command=self.peak_finder
+        self.find_btn = ButtonCls(
+            control_frame,
+            text="Find Peaks",
+            command=self.peak_finder,
+            **button_kwargs,
         )
         self.find_btn.pack(fill=tk.X, padx=5, pady=2)
 
@@ -1040,13 +1079,19 @@ class SpanPeakSelector:
         self.selected_peak = mid
         self.peak_slider.pack(fill=tk.X, padx=5, pady=2)
 
-        self.fit_btn = tk.Button(
-            control_frame, text="Fit Lorentzian", command=self.fit_lorentzian
+        self.fit_btn = ButtonCls(
+            control_frame,
+            text="Fit Lorentzian",
+            command=self.fit_lorentzian,
+            **button_kwargs,
         )
         self.fit_btn.pack(fill=tk.X, padx=5, pady=2)
 
-        self.compare_btn = tk.Button(
-            control_frame, text="Compare Spectra", command=self.compare_spectra
+        self.compare_btn = ButtonCls(
+            control_frame,
+            text="Compare Spectra",
+            command=self.compare_spectra,
+            **button_kwargs,
         )
         self.compare_btn.pack(fill=tk.X, padx=5, pady=(2, 5))
 
