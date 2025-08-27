@@ -365,12 +365,17 @@ def fit_lorentzian_derivative(
 # ---------------------------------------------------------------------------
 # Metadata for help menu
 # ---------------------------------------------------------------------------
-H_plus, H_minus = sp.symbols('H_+ H_-')
-FWHM, ΔH_pp, H = sp.symbols('FWHM ΔH_pp H')
-A, B = sp.symbols('A B')
-I = sp.Function('I')
-L_abs = sp.Function('L_abs')
-L_disp = sp.Function('L_disp')
+H_plus, H_minus = sp.symbols("H_+ H_-")
+FWHM, ΔH_pp, H = sp.symbols("FWHM ΔH_pp H")
+A, B = sp.symbols("A B")
+I = sp.Function("I")
+L_abs = sp.Function("L_abs")
+L_disp = sp.Function("L_disp")
+
+# Symbols for displaying derivative expressions as textbook-style fractions
+dI_H, dL_abs_H, dL_disp_H, dH = sp.symbols(
+    "dI(H) dL_abs(H) dL_disp(H) dH"
+)
 
 FUNCTION_DETAILS: dict[str, tuple[str, sp.Expr | None]] = {
     "find_peak": (
@@ -396,8 +401,8 @@ FUNCTION_DETAILS: dict[str, tuple[str, sp.Expr | None]] = {
     "fit_lorentzian_derivative": (
         "Fit a derivative ESR line to a Lorentzian derivative model",
         sp.Eq(
-            sp.diff(I(H), H),
-            A * sp.diff(L_abs(H), H) + B * sp.diff(L_disp(H), H),
+            dI_H / dH,
+            A * dL_abs_H / dH + B * dL_disp_H / dH,
         ),
     ),
 }
