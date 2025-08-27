@@ -29,6 +29,7 @@ from .analysis import (
     peak_finder as auto_peak_finder,
 )
 from .io import ESRLoader
+from .plotter import plot_residuals
 
 
 def _filter_ticks(ticks: list[float], lower: float, upper: float) -> list[float]:
@@ -734,9 +735,12 @@ class SpanPeakSelector:
                 a_guess = 1.0
 
         p0 = (self.selected_peak, delta_guess, a_guess, 0.0)
-        params = fit_lorentzian_derivative(field, intensity, p0=p0)
+        params, stats = fit_lorentzian_derivative(field, intensity, p0=p0)
 
         h_res, delta, A, B = params
+        chi2 = stats["chi2"]
+        stderr = stats["stderr"]
+        residuals = stats["residuals"]
 
         def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float):
             x = H - H_res
@@ -750,11 +754,16 @@ class SpanPeakSelector:
         self.ax.legend()
         self.ax.figure.canvas.draw_idle()
 
+        # Show residual plot
+        plot_residuals(field, residuals)
+
         accept = messagebox.askyesno(
             "Lorentzian Fit",
             (
                 f"H_res={h_res:.3f}\n"
-                f"Delta={delta:.3f}\nA={A:.3f}\nB={B:.3f}\nAccept fit?"
+                f"Delta={delta:.3f}\nA={A:.3f}\nB={B:.3f}\n"
+                f"chi^2={chi2:.3e}\n"
+                f"stderr={stderr}\nAccept fit?"
             ),
         )
 

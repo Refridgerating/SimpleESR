@@ -4,7 +4,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from unittest.mock import patch
 
-from esr_lab.plotter import ESRPlotter, configure_subplot
+from esr_lab.plotter import ESRPlotter, configure_subplot, plot_residuals
 from esr_lab.spectrum import ESRSpectrum
 
 
@@ -78,3 +78,12 @@ def test_configure_subplot_allows_customisation():
     assert ax.xaxis._major_tick_kw["gridOn"]
     assert ax.xaxis._minor_tick_kw["gridOn"]
     plt.close(fig)
+
+
+def test_plot_residuals_calls_show():
+    field = np.array([0.0, 1.0])
+    residuals = np.array([0.1, -0.1])
+    with patch("matplotlib.pyplot.show") as show_mock:
+        plot_residuals(field, residuals)
+        show_mock.assert_called_once()
+    plt.close("all")

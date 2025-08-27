@@ -207,13 +207,15 @@ def test_lorentzian_fit_overlay():
     selector.ax.plot(spectrum.field, spectrum.intensity)
     selector.selected_peak = -0.5
     with patch(
-        "esr_lab.gui.fit_lorentzian_derivative", return_value=(0.0, 1.0, 1.0, 0.0)
+        "esr_lab.gui.fit_lorentzian_derivative",
+        return_value=((0.0, 1.0, 1.0, 0.0), {"chi2": 0.0, "stderr": (0, 0, 0, 0), "residuals": np.zeros(5)}),
     ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True) as ask, patch(
         "esr_lab.gui.simpledialog.askinteger", return_value=1
-    ):
+    ), patch("esr_lab.gui.plot_residuals") as plot_res:
         selector.fit_lorentzian()
         fit.assert_called_once()
         ask.assert_called_once()
+        plot_res.assert_called_once()
         assert len(selector.ax.lines) == 2
     plt.close(fig)
 
@@ -221,10 +223,11 @@ def test_lorentzian_fit_overlay():
     selector.ax.plot(spectrum.field, spectrum.intensity)
     selector.selected_peak = 0.5
     with patch(
-        "esr_lab.gui.fit_lorentzian_derivative", return_value=(0.0, 1.0, 1.0, 0.0)
+        "esr_lab.gui.fit_lorentzian_derivative",
+        return_value=((0.0, 1.0, 1.0, 0.0), {"chi2": 0.0, "stderr": (0, 0, 0, 0), "residuals": np.zeros(5)}),
     ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=False) as ask, patch(
         "esr_lab.gui.simpledialog.askinteger", return_value=1
-    ):
+    ), patch("esr_lab.gui.plot_residuals"):
         selector.fit_lorentzian()
         fit.assert_called_once()
         ask.assert_called_once()
@@ -241,10 +244,10 @@ def test_lorentzian_fit_results_tabulated():
     selector.lorentz_tree = MagicMock()
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative",
-        return_value=(0.0, 1.0, 2.0, 3.0),
+        return_value=((0.0, 1.0, 2.0, 3.0), {"chi2": 0.0, "stderr": (0, 0, 0, 0), "residuals": np.zeros(5)}),
     ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True), patch(
         "esr_lab.gui.simpledialog.askinteger", return_value=1
-    ):
+    ), patch("esr_lab.gui.plot_residuals"):
         selector.fit_lorentzian()
         fit.assert_called_once()
     assert selector.lorentz_results == [
