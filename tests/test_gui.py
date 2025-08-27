@@ -312,7 +312,7 @@ def test_spectra_comparison_tabulated():
         ],
     ]
 
-    with patch("esr_lab.gui.simpledialog.askinteger", side_effect=[1, 2]), patch(
+    with patch.object(selector, "_prompt_traces", return_value=(0, 1)), patch(
         "esr_lab.gui.messagebox.showinfo"
     ):
         selector.compare_spectra()
