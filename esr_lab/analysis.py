@@ -120,9 +120,17 @@ def calc_peak_to_peak(
 
 
 def peak_finder(
-    field: np.ndarray, intensity: np.ndarray, expected: int = 4
+    field: np.ndarray,
+    intensity: np.ndarray,
+    expected: int = 4,
+    width: float = 15.0,
 ) -> list[tuple[int, int]]:
     """Automatically locate peak pairs in the provided data.
+
+    This implementation relies on the derivative spectrum crossing zero between
+    the positive and negative extrema of an absorption peak.  Around each zero
+    crossing, local extrema are searched within a window of ``±width`` and
+    paired up to yield the peak positions.
 
     Parameters
     ----------
@@ -134,6 +142,10 @@ def peak_finder(
         Total number of extrema to locate.  This should be an even number as
         each absorption line exhibits a positive and a negative extremum.  The
         default of ``4`` therefore corresponds to two absorption lines.
+    width:
+        Half width in magnetic-field units used around each zero crossing to
+        determine the local maxima and minima.  The default of ``15.0`` mT
+        mirrors the manual analysis range used in the GUI.
 
     Returns
     -------
@@ -151,34 +163,51 @@ def peak_finder(
     if expected < 2 or expected % 2 != 0:
         raise ValueError("Expected number of peaks must be an even integer >= 2")
 
-    pos_peaks, _ = find_peaks(intensity)
-    neg_peaks, _ = find_peaks(-intensity)
-
-    n_pairs = expected // 2
-    if len(pos_peaks) < n_pairs or len(neg_peaks) < n_pairs:
-        raise ValueError("Not enough peaks found in the data")
-
-    pos_order = np.argsort(intensity[pos_peaks])[-n_pairs:]
-    neg_order = np.argsort(intensity[neg_peaks])[:n_pairs]
-    pos_idx = pos_peaks[pos_order]
-    neg_idx = neg_peaks[neg_order]
-
-    all_indices = np.concatenate([pos_idx, neg_idx])
-    sort_order = np.argsort(field[all_indices])
-    sorted_indices = all_indices[sort_order]
+    # Identify zero crossings where the signal changes from positive to
+    # negative.  Zeros are ignored by using ``nan`` and compressing the array to
+    # regions of constant sign.
+    sign = np.sign(intensity)
+    sign = np.where(sign == 0, np.nan, sign)
+    nonzero_idx = np.where(~np.isnan(sign))[0]
+    if nonzero_idx.size == 0:
+        raise ValueError("No non-zero data points found")
+    nonzero_sign = sign[nonzero_idx]
+    changes = np.where((nonzero_sign[:-1] > 0) & (nonzero_sign[1:] < 0))[0]
+    zero_crossings = (nonzero_idx[changes] + nonzero_idx[changes + 1]) // 2
 
     pairs: list[tuple[int, int]] = []
-    for i in range(0, len(sorted_indices), 2):
-        first = sorted_indices[i]
-        second = sorted_indices[i + 1]
-        if intensity[first] >= intensity[second]:
-            pos = first
-            neg = second
-        else:
-            pos = second
-            neg = first
-        pairs.append((int(pos), int(neg)))
+    for i, zc in enumerate(zero_crossings):
+        center = field[zc]
+        left_bound = center - width
+        right_bound = center + width
+        if i > 0:
+            left_bound = max(left_bound, field[zero_crossings[i - 1]])
+        if i < len(zero_crossings) - 1:
+            right_bound = min(right_bound, field[zero_crossings[i + 1]])
 
+        left_mask = (field >= left_bound) & (field <= center)
+        right_mask = (field >= center) & (field <= right_bound)
+        left_idx = np.where(left_mask)[0]
+        right_idx = np.where(right_mask)[0]
+        if left_idx.size == 0 or right_idx.size == 0:
+            continue
+
+        pos_idx = left_idx[np.argmax(intensity[left_idx])]
+        neg_idx = right_idx[np.argmin(intensity[right_idx])]
+        pairs.append((int(pos_idx), int(neg_idx)))
+
+    n_pairs = expected // 2
+    if len(pairs) < n_pairs:
+        raise ValueError("Not enough peaks found in the data")
+
+    # Rank pairs by their peak-to-peak amplitude and select the most prominent
+    pairs = sorted(
+        pairs,
+        key=lambda p: abs(intensity[p[0]] - intensity[p[1]]),
+        reverse=True,
+    )[:n_pairs]
+
+    pairs.sort(key=lambda p: field[p[0]])
     return pairs
 
 
