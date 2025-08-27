@@ -372,3 +372,26 @@ def test_integrate_trace_plots_absorption():
     assert line.get_label() == "Trace 1 (absorption)"
     plt.close(fig)
 
+
+def test_trace_visibility_toggle_updates_legend():
+    spec1 = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))
+    selector = gui.SpanPeakSelector([spec1, spec2], labels=["one", "two"])
+    fig, selector.ax = plt.subplots()
+    selector.trace_lines = []
+    for spec in selector.spectra:
+        line, = selector.ax.plot(spec.field, spec.intensity)
+        selector.trace_lines.append(line)
+
+    selector.update_legend()
+    assert len(selector.ax.get_legend().get_texts()) == 2
+
+    selector._toggle_trace(1, False)
+    assert not selector.trace_lines[1].get_visible()
+    assert len(selector.ax.get_legend().get_texts()) == 1
+
+    selector._toggle_trace(1, True)
+    assert selector.trace_lines[1].get_visible()
+    assert len(selector.ax.get_legend().get_texts()) == 2
+    plt.close(fig)
+
