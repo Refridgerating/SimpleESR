@@ -350,3 +350,25 @@ def test_spectra_comparison_tabulated():
     assert ("\u0394H_pp P1", "3.000", "5.000", "-2.000") in values
     assert ("H_res P1", "10.000", "12.000", "-2.000") in values
 
+
+def test_integrate_trace_plots_absorption():
+    field = np.linspace(0, 4, 5)
+    intensity = np.array([0.0, 1.0, 0.0, -1.0, 0.0])
+    spec = ESRSpectrum(field=field, intensity=intensity)
+    selector = gui.SpanPeakSelector(spec)
+    fig, selector.ax = plt.subplots()
+
+    # Initial derivative trace
+    selector.ax.plot(field, intensity)
+    selector.integrate_trace()
+
+    from scipy.integrate import cumulative_trapezoid
+
+    expected = cumulative_trapezoid(intensity, field, initial=0)
+    expected -= np.mean(expected)
+
+    line = selector.ax.lines[-1]
+    assert np.allclose(line.get_ydata(), expected)
+    assert line.get_label() == "Trace 1 (absorption)"
+    plt.close(fig)
+
