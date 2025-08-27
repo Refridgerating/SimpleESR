@@ -367,24 +367,63 @@ class SpanPeakSelector:
 
         if len(self.spectra) < 2:
             return None
+
         try:
-            first = simpledialog.askinteger(
-                "Compare Spectra",
-                "First trace (1-indexed):",
-                minvalue=1,
-                maxvalue=len(self.spectra),
-            )
-            if first is None:
-                return None
-            second = simpledialog.askinteger(
-                "Compare Spectra",
-                "Second trace (1-indexed):",
-                minvalue=1,
-                maxvalue=len(self.spectra),
-            )
-            if second is None:
-                return None
-            return int(first - 1), int(second - 1)
+            class _TraceDialog(simpledialog.Dialog):
+                """Dialog with two drop-downs to choose spectra."""
+
+                def __init__(self, parent, labels: list[str]):
+                    self.labels = labels
+                    self.first_var = tk.StringVar()
+                    self.second_var = tk.StringVar()
+                    super().__init__(parent, title="Compare Spectra")
+
+                def body(self, master):  # type: ignore[override]
+                    ttk.Label(master, text="First trace:").grid(row=0, column=0, padx=5, pady=5)
+                    first = ttk.Combobox(
+                        master,
+                        values=self.labels,
+                        textvariable=self.first_var,
+                        state="readonly",
+                    )
+                    first.grid(row=0, column=1, padx=5, pady=5)
+                    if self.labels:
+                        first.current(0)
+                        self.first_var.set(self.labels[0])
+
+                    ttk.Label(master, text="Second trace:").grid(row=1, column=0, padx=5, pady=5)
+                    second = ttk.Combobox(
+                        master,
+                        values=self.labels,
+                        textvariable=self.second_var,
+                        state="readonly",
+                    )
+                    second.grid(row=1, column=1, padx=5, pady=5)
+                    if len(self.labels) > 1:
+                        second.current(1)
+                        self.second_var.set(self.labels[1])
+                    elif self.labels:
+                        second.current(0)
+                        self.second_var.set(self.labels[0])
+                    return first
+
+                def apply(self) -> None:  # type: ignore[override]
+                    self.result = (
+                        self.labels.index(self.first_var.get()),
+                        self.labels.index(self.second_var.get()),
+                    )
+
+            parent = self.root
+            temp_root = None
+            if parent is None:
+                temp_root = tk.Tk()
+                temp_root.withdraw()
+                parent = temp_root
+
+            dialog = _TraceDialog(parent, self.labels)
+            if temp_root is not None:
+                temp_root.destroy()
+            return dialog.result
         except Exception:
             if len(self.spectra) >= 2:
                 return 0, 1
