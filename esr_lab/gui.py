@@ -1288,6 +1288,19 @@ class SpanPeakSelector:
 
         self.root = tk.Tk()
         self.root.title("ESR Spectrum")
+        try:
+            self.root.update_idletasks()
+            self.root.state("zoomed")
+        except Exception:
+            try:
+                self.root.attributes("-zoomed", True)
+            except Exception:
+                try:
+                    width = self.root.winfo_screenwidth()
+                    height = self.root.winfo_screenheight()
+                    self.root.geometry(f"{width}x{height}+0+0")
+                except Exception:
+                    pass
         self._create_menu()
 
         ButtonCls: type[tk.Button] | type[ttk.Button] = ttk.Button
