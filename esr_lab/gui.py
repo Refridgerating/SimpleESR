@@ -24,6 +24,7 @@ from .analysis import (
     find_peak,
     fit_lorentzian_derivative,
     calc_peak_to_peak,
+    peak_finder as auto_peak_finder,
 )
 from .io import ESRLoader
 
@@ -305,6 +306,12 @@ class SpanPeakSelector:
         ]
         self.ranges = self.ranges_all[self.current]
 
+        # Automatically detected peak indices per trace
+        self.auto_peaks_all: list[list[tuple[int, int]]] = [
+            [] for _ in self.spectra
+        ]
+        self.auto_peaks = self.auto_peaks_all[self.current]
+
         # GUI related attributes are initialised lazily in ``show`` so that the
         # class can be instantiated in environments without a display (e.g. the
         # test suite).
@@ -314,6 +321,7 @@ class SpanPeakSelector:
         self.lorentz_tree: ttk.Treeview | None = None
         self.analyse_btn: tk.Button | None = None
         self.dhpp_btn: tk.Button | None = None
+        self.find_btn: tk.Button | None = None
         self.fit_btn: tk.Button | None = None
         self.compare_btn: tk.Button | None = None
         self.compare_tree: ttk.Treeview | None = None
@@ -454,10 +462,49 @@ class SpanPeakSelector:
         if peak_choice is None:
             return
         self.current_peak = int(peak_choice)
-
-        self.ranges.clear()
         self.analysis_func = analysis_func
         self.analysis_label = label
+
+        if len(self.auto_peaks) >= self.current_peak:
+            pos_idx, neg_idx = self.auto_peaks[self.current_peak - 1]
+            width = self.analysis_func(
+                self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
+            )
+            pos_field = self.spectrum.field[pos_idx]
+            pos_y = self.spectrum.intensity[pos_idx]
+            neg_field = self.spectrum.field[neg_idx]
+            neg_y = self.spectrum.intensity[neg_idx]
+            result = {
+                "analysis": self.analysis_label,
+                "peak": int(self.current_peak),
+                "pos_x": float(pos_field),
+                "pos_y": float(pos_y),
+                "neg_x": float(neg_field),
+                "neg_y": float(neg_y),
+                "width": float(width),
+            }
+            self.results.append(result)
+            if self.tree is not None:
+                self.tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        self.analysis_label,
+                        f"{self.current_peak}",
+                        f"{pos_field:.3f}",
+                        f"{pos_y:.3f}",
+                        f"{neg_field:.3f}",
+                        f"{neg_y:.3f}",
+                        f"{width:.3f}",
+                    ),
+                )
+            messagebox.showinfo(
+                "Peak analysis",
+                f"Peak {self.current_peak}: pos={pos_field:.3f}, neg={neg_field:.3f}, {self.analysis_label}={width:.3f}",
+            )
+            return
+
+        self.ranges.clear()
         if self.selector is not None:
             self.selector.disconnect_events()
         assert self.ax is not None
@@ -468,11 +515,65 @@ class SpanPeakSelector:
             self.analyse_btn.config(state=tk.DISABLED)
         if self.dhpp_btn is not None:
             self.dhpp_btn.config(state=tk.DISABLED)
+        if self.find_btn is not None:
+            self.find_btn.config(state=tk.DISABLED)
 
     def start_peak_to_peak(self) -> None:
         """Start interactive \u0394H_pp analysis using span selection."""
 
         self.start_analysis(calc_peak_to_peak, "\u0394H_pp")
+
+    def peak_finder(self) -> None:
+        """Automatically detect peak pairs for the active spectrum."""
+
+        try:
+            num = simpledialog.askinteger(
+                "Peak Finder", "How many peaks to expect?", initialvalue=4, minvalue=2
+            )
+        except Exception:
+            num = 4
+        if num is None:
+            return
+
+        spec = self.spectra[self.current]
+        field = spec.field
+        intensity = spec.intensity
+        try:
+            pairs = auto_peak_finder(field, intensity, expected=int(num))
+        except ValueError as exc:
+            messagebox.showerror("Peak Finder", str(exc))
+            return
+
+        assert self.ax is not None
+        temp_marks = []
+        for p, n in pairs:
+            pos_mark = self.ax.plot(field[p], intensity[p], "o", color="red")[0]
+            neg_mark = self.ax.plot(field[n], intensity[n], "o", color="blue")[0]
+            temp_marks.extend([pos_mark, neg_mark])
+        self.ax.figure.canvas.draw_idle()
+
+        lines = [
+            (
+                f"Peak {i + 1}: pos=({field[p]:.3f}, {intensity[p]:.3f}), "
+                f"neg=({field[n]:.3f}, {intensity[n]:.3f})"
+            )
+            for i, (p, n) in enumerate(pairs)
+        ]
+        accept = messagebox.askyesno(
+            "Peak Finder", "\n".join(lines) + "\nAccept peaks?"
+        )
+
+        for mark in temp_marks:
+            mark.remove()
+        self.ax.figure.canvas.draw_idle()
+
+        if not accept:
+            return
+
+        self.auto_peaks_all[self.current].clear()
+        self.auto_peaks_all[self.current].extend(pairs)
+        self.auto_peaks = self.auto_peaks_all[self.current]
+        messagebox.showinfo("Peak Finder", "Peaks stored for analysis")
 
     # ------------------------------------------------------------------
     def onselect(self, xmin: float, xmax: float) -> None:
@@ -533,6 +634,8 @@ class SpanPeakSelector:
             self.analyse_btn.config(state=tk.NORMAL)
         if self.dhpp_btn is not None:
             self.dhpp_btn.config(state=tk.NORMAL)
+        if self.find_btn is not None:
+            self.find_btn.config(state=tk.NORMAL)
 
         # Maintain backwards-compatible notification for the tests
         messagebox.showinfo("Peak analysis", "\n".join(lines))
@@ -796,6 +899,7 @@ class SpanPeakSelector:
         self.results = self.results_all[self.current]
         self.lorentz_results = self.lorentz_all[self.current]
         self.ranges = self.ranges_all[self.current]
+        self.auto_peaks = self.auto_peaks_all[self.current]
 
         field_min = float(np.min(self.spectrum.field))
         field_max = float(np.max(self.spectrum.field))
@@ -882,6 +986,11 @@ class SpanPeakSelector:
             panel, text="Analyse \u0394H_pp", command=self.start_peak_to_peak
         )
         self.dhpp_btn.pack(padx=5, pady=5)
+
+        self.find_btn = tk.Button(
+            panel, text="Find Peaks", command=self.peak_finder
+        )
+        self.find_btn.pack(padx=5, pady=5)
 
         field_min = float(np.min(self.spectrum.field))
         field_max = float(np.max(self.spectrum.field))

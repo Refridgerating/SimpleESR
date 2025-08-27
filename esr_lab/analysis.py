@@ -119,6 +119,82 @@ def calc_peak_to_peak(
     return float(abs(field[pos_idx] - field[neg_idx]))
 
 
+def peak_finder(
+    field: np.ndarray, intensity: np.ndarray, expected: int = 4
+) -> list[tuple[int, int]]:
+    """Automatically locate peak pairs in the provided data.
+
+    Parameters
+    ----------
+    field:
+        Array of magnetic-field values.
+    intensity:
+        Array of recorded intensity values corresponding to ``field``.
+    expected:
+        Total number of extrema to locate.  This should be an even number as
+        each absorption line exhibits a positive and a negative extremum.  The
+        default of ``4`` therefore corresponds to two absorption lines.
+
+    Returns
+    -------
+    list[tuple[int, int]]
+        A list of ``(positive_idx, negative_idx)`` tuples ordered by increasing
+        field.  Each tuple represents one absorption line with the positive and
+        negative peaks chosen as the closest pair in magnetic field.
+
+    Raises
+    ------
+    ValueError
+        If an insufficient number of extrema is found or if ``expected`` is not
+        a positive, even integer.
+    """
+
+    if expected < 2 or expected % 2 != 0:
+        raise ValueError("Expected number of peaks must be an even integer >= 2")
+
+    pos_peaks, _ = find_peaks(intensity)
+    neg_peaks, _ = find_peaks(-intensity)
+
+    n_pairs = expected // 2
+    if len(pos_peaks) < n_pairs or len(neg_peaks) < n_pairs:
+        raise ValueError("Not enough peaks found in the data")
+
+    # Select the most prominent extrema first.
+    pos_order = np.argsort(intensity[pos_peaks])[-n_pairs:]
+    neg_order = np.argsort(intensity[neg_peaks])[:n_pairs]
+    pos_idx = pos_peaks[pos_order]
+    neg_idx = neg_peaks[neg_order]
+
+    # Determine pairs based on proximity in the magnetic field so that each
+    # positive/negative combination corresponds to a single absorption peak.
+    pos_fields = field[pos_idx]
+    neg_fields = field[neg_idx]
+    distances: list[tuple[float, int, int]] = []
+    for p_idx, p in enumerate(pos_idx):
+        for n_idx, n in enumerate(neg_idx):
+            dist = abs(pos_fields[p_idx] - neg_fields[n_idx])
+            distances.append((float(dist), int(p), int(n)))
+
+    distances.sort(key=lambda x: x[0])
+    used_pos: set[int] = set()
+    used_neg: set[int] = set()
+    pairs: list[tuple[int, int]] = []
+    for _dist, p, n in distances:
+        if p in used_pos or n in used_neg:
+            continue
+        pairs.append((p, n))
+        used_pos.add(p)
+        used_neg.add(n)
+        if len(pairs) == n_pairs:
+            break
+
+    if len(pairs) < n_pairs:
+        raise ValueError("Not enough distinct peak pairs found")
+
+    pairs.sort(key=lambda pr: min(field[pr[0]], field[pr[1]]))
+    return [(int(p), int(n)) for p, n in pairs]
+
+
 def fit_lorentzian_derivative(
     field: np.ndarray,
     intensity: np.ndarray,

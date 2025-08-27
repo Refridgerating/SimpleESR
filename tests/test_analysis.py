@@ -6,6 +6,7 @@ from esr_lab import (
     calc_fwhm,
     fit_lorentzian_derivative,
     calc_peak_to_peak,
+    peak_finder,
 )
 
 
@@ -52,3 +53,17 @@ def test_fit_lorentzian_derivative_parameters():
     params = fit_lorentzian_derivative(field, intensity)
 
     assert np.allclose(params, (H_res, delta, A, B), atol=1e-6)
+
+
+def test_peak_finder_pairs():
+    field = np.arange(20.0)
+    intensity = np.array(
+        [
+            0, 1, 0, -1, 0, 2, 0, -2, 0, 0,
+            0, 1.5, 0, -1.5, 0, 0.5, 0, -0.5, 0, 0,
+        ]
+    )
+
+    pairs = peak_finder(field, intensity)
+
+    assert pairs == [(5, 7), (11, 13)]
