@@ -419,3 +419,67 @@ def test_trace_visibility_toggle_updates_legend():
     assert len(selector.ax.get_legend().get_texts()) == 2
     plt.close(fig)
 
+
+def test_help_menu_created(monkeypatch):
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+
+    class DummyRoot:
+        def __init__(self):
+            self.menu = None
+
+        def config(self, **kwargs):
+            self.menu = kwargs.get("menu")
+
+    root = DummyRoot()
+    selector.root = root
+
+    class DummyMenu:
+        def __init__(self, master=None, tearoff=0):
+            self.items = []
+            self.cascade = None
+
+        def add_command(self, label, command):
+            self.items.append(("command", label, command))
+
+        def add_cascade(self, label, menu):
+            self.cascade = (label, menu)
+
+    monkeypatch.setattr(gui.tk, "Menu", DummyMenu)
+
+    selector._create_menu()
+
+    assert isinstance(root.menu, DummyMenu)
+    assert root.menu.cascade[0] == "Help"
+    help_menu = root.menu.cascade[1]
+    expected = [
+        ("command", "Readme", selector._show_readme),
+        ("command", "Workflow", selector._show_workflow),
+        ("command", "Functions", selector._show_functions),
+    ]
+    assert help_menu.items == expected
+
+
+def test_help_dialogs(monkeypatch):
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+
+    info = MagicMock()
+    monkeypatch.setattr(gui.messagebox, "showinfo", info)
+
+    monkeypatch.setattr(gui.Path, "read_text", lambda self, encoding="utf-8": "readme text")
+    selector._show_readme()
+    info.assert_called_with("README", "readme text")
+
+    info.reset_mock()
+    selector._show_workflow()
+    assert info.call_args[0][0] == "Workflow"
+
+    info.reset_mock()
+    monkeypatch.setattr(gui, "FUNCTION_DETAILS", {"f": ("desc", "math")})
+    selector._show_functions()
+    call = info.call_args
+    assert call[0][0] == "Functions"
+    assert "desc" in call[0][1]
+    assert "math" in call[0][1]
+
