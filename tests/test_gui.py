@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from unittest.mock import patch, MagicMock
+import sympy as sp
 
 from esr_lab import gui
 from esr_lab.spectrum import ESRSpectrum
@@ -497,12 +498,14 @@ def test_help_dialogs(monkeypatch):
     assert info.call_args[0][0] == "Workflow"
 
     info.reset_mock()
-    monkeypatch.setattr(gui, "FUNCTION_DETAILS", {"f": ("desc", r"$x^2$")})
+    monkeypatch.setattr(gui, "FUNCTION_DETAILS", {"f": ("desc", sp.Symbol("x") ** 2)})
     selector._show_functions()
     call = info.call_args
     assert call[0][0] == "Functions"
     lines = call[0][1].splitlines()
     assert lines[0] == "f"
     assert lines[1].strip() == "desc"
-    assert lines[2].strip() == r"$x^2$"
+    expected = sp.pretty(sp.Symbol("x") ** 2, use_unicode=True).splitlines()
+    for idx, part in enumerate(expected, start=2):
+        assert lines[idx].strip() == part.strip()
 

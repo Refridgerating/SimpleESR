@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from scipy.signal import find_peaks
+import sympy as sp
 
 
 def find_peak(
@@ -364,29 +365,39 @@ def fit_lorentzian_derivative(
 # ---------------------------------------------------------------------------
 # Metadata for help menu
 # ---------------------------------------------------------------------------
-FUNCTION_DETAILS: dict[str, tuple[str, str]] = {
+H_plus, H_minus = sp.symbols('H_+ H_-')
+FWHM, ΔH_pp, H = sp.symbols('FWHM ΔH_pp H')
+A, B = sp.symbols('A B')
+I = sp.Function('I')
+L_abs = sp.Function('L_abs')
+L_disp = sp.Function('L_disp')
+
+FUNCTION_DETAILS: dict[str, tuple[str, sp.Expr | None]] = {
     "find_peak": (
         "Locate the positive and negative peaks within a field window",
-        "",
+        None,
     ),
     "calc_fwhm": (
         "Estimate the full width at half maximum (FWHM)",
-        r"$\mathrm{FWHM} = |H_{+} - H_{-}|$",
+        sp.Eq(FWHM, sp.Abs(H_plus - H_minus)),
     ),
     "calc_peak_to_peak": (
-        r"Compute the peak-to-peak separation $\Delta H_{pp}$",
-        r"$\Delta H_{pp} = |H_{+} - H_{-}|$",
+        "Compute the peak-to-peak separation ΔH_pp",
+        sp.Eq(ΔH_pp, sp.Abs(H_plus - H_minus)),
     ),
     "peak_finder": (
         "Automatically locate peak pairs in the provided data",
-        "",
+        None,
     ),
     "baseline_correct": (
         "Perform a polynomial baseline correction",
-        "",
+        None,
     ),
     "fit_lorentzian_derivative": (
         "Fit a derivative ESR line to a Lorentzian derivative model",
-        r"$\frac{dI}{dH} = A\partial_H L_{\text{abs}}(H) + B\partial_H L_{\text{disp}}(H)$",
+        sp.Eq(
+            sp.diff(I(H), H),
+            A * sp.diff(L_abs(H), H) + B * sp.diff(L_disp(H), H),
+        ),
     ),
 }
