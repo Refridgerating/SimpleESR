@@ -476,10 +476,12 @@ def test_help_dialogs(monkeypatch):
     assert info.call_args[0][0] == "Workflow"
 
     info.reset_mock()
-    monkeypatch.setattr(gui, "FUNCTION_DETAILS", {"f": ("desc", "math")})
+    monkeypatch.setattr(gui, "FUNCTION_DETAILS", {"f": ("desc", r"$x^2$")})
     selector._show_functions()
     call = info.call_args
     assert call[0][0] == "Functions"
-    assert "desc" in call[0][1]
-    assert "math" in call[0][1]
+    lines = call[0][1].splitlines()
+    assert lines[0] == "f"
+    assert lines[1].strip() == "desc"
+    assert lines[2].strip() == r"$x^2$"
 
