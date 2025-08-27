@@ -276,6 +276,105 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             )
 
 
+class BaselinePointEditor:
+    """Interactive helper for selecting and adjusting baseline points.
+
+    Points can be added with a mouse click and subsequently dragged along the
+    recorded trace. A provisional baseline derived from the current set of
+    points is drawn as a dashed line and updated dynamically as markers move.
+    """
+
+    def __init__(
+        self,
+        ax,
+        field: np.ndarray,
+        intensity: np.ndarray,
+        degree: int = 1,
+        on_update: Callable[[], None] | None = None,
+    ) -> None:
+        self.ax = ax
+        self.field = field
+        self.intensity = intensity
+        self.degree = degree
+        self.on_update = on_update
+        self.points: list[tuple[float, float]] = []
+        self.point_artists: list[Line2D] = []
+        self.baseline_line: Line2D | None = None
+        self.drag_idx: int | None = None
+
+        canvas = self.ax.figure.canvas
+        self.cid_click = canvas.mpl_connect("button_press_event", self.on_click)
+        self.cid_release = canvas.mpl_connect("button_release_event", self.on_release)
+        self.cid_motion = canvas.mpl_connect("motion_notify_event", self.on_motion)
+
+    def _nearest_point(self, x: float) -> tuple[float, float]:
+        idx = int(np.argmin((self.field - x) ** 2))
+        return float(self.field[idx]), float(self.intensity[idx])
+
+    def on_click(self, event) -> None:
+        if event.inaxes != self.ax:
+            return
+        for i, artist in enumerate(self.point_artists):
+            contains, _ = artist.contains(event)
+            if contains:
+                self.drag_idx = i
+                return
+
+        x, y = self._nearest_point(event.xdata)
+        (artist,) = self.ax.plot(x, y, "ro")
+        self.points.append((x, y))
+        self.point_artists.append(artist)
+        self.update_baseline()
+        if self.on_update:
+            self.on_update()
+        self.ax.figure.canvas.draw_idle()
+
+    def on_motion(self, event) -> None:
+        if self.drag_idx is None or event.inaxes != self.ax:
+            return
+        x, y = self._nearest_point(event.xdata)
+        self.points[self.drag_idx] = (x, y)
+        self.point_artists[self.drag_idx].set_data([x], [y])
+        self.update_baseline()
+        if self.on_update:
+            self.on_update()
+        self.ax.figure.canvas.draw_idle()
+
+    def on_release(self, _event) -> None:
+        self.drag_idx = None
+
+    def update_baseline(self) -> None:
+        if len(self.points) < 2:
+            return
+        _corr, baseline = baseline_correct(
+            self.field, self.intensity, points=self.points, degree=self.degree
+        )
+        if self.baseline_line is None:
+            (self.baseline_line,) = self.ax.plot(
+                self.field, baseline, "k--", linewidth=1
+            )
+        else:
+            self.baseline_line.set_data(self.field, baseline)
+
+    def get_points(self) -> list[tuple[float, float]]:
+        return self.points
+
+    def disconnect(self) -> None:
+        canvas = self.ax.figure.canvas
+        canvas.mpl_disconnect(self.cid_click)
+        canvas.mpl_disconnect(self.cid_release)
+        canvas.mpl_disconnect(self.cid_motion)
+
+    def clear_artists(self) -> None:
+        for artist in self.point_artists:
+            artist.remove()
+        self.point_artists.clear()
+        if self.baseline_line is not None:
+            self.baseline_line.remove()
+            self.baseline_line = None
+        self.ax.figure.canvas.draw_idle()
+
+
 
 class SpanPeakSelector:
     """Interactive peak analysis with an optional Tk GUI.
@@ -937,33 +1036,27 @@ class SpanPeakSelector:
                     padx=10, pady=5
                 )
 
-                def onclick(event):
-                    if event.inaxes != self.ax:
-                        return
-                    idx = int(np.argmin((field - event.xdata) ** 2))
-                    x = float(field[idx])
-                    y = float(intensity[idx])
-                    pts.append((x, y))
-                    count_var.set(f"Selected points: {len(pts)}")
-                    self.ax.plot(x, y, "ro")
-                    self.ax.figure.canvas.draw_idle()
+                editor = BaselinePointEditor(self.ax, field, intensity, degree)
 
-                cid = self.ax.figure.canvas.mpl_connect(
-                    "button_press_event", onclick
-                )
+                def _update_count() -> None:
+                    count_var.set(f"Selected points: {len(editor.get_points())}")
+
+                editor.on_update = _update_count
                 dialog.wait_variable(done)
-                self.ax.figure.canvas.mpl_disconnect(cid)
-
+                editor.disconnect()
+                pts = editor.get_points()
                 if len(pts) < 2:
+                    editor.clear_artists()
                     messagebox.showwarning(
                         "Baseline Correction",
                         "At least two points are required for manual baseline correction.",
                     )
                     return
-
             corrected, _baseline = baseline_correct(
                 field, intensity, points=pts, degree=degree
             )
+            if self.root is not None:
+                editor.clear_artists()
 
         label = f"{self.labels[self.current]} (baseline corrected)"
         (line,) = self.ax.plot(field, corrected, label=label)

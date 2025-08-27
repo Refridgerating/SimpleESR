@@ -231,6 +231,32 @@ def test_baseline_correction_manual():
     plt.close(fig)
 
 
+def test_baseline_editor_clear():
+    field = np.linspace(0.0, 2.0, 3)
+    intensity = np.zeros(3)
+    fig, ax = plt.subplots()
+    editor = gui.BaselinePointEditor(ax, field, intensity, degree=1)
+
+    class Event:
+        def __init__(self, x):
+            self.inaxes = ax
+            self.xdata = x
+            self.ydata = 0.0
+            self.x, self.y = ax.transData.transform((x, 0.0))
+
+    editor.on_click(Event(field[0]))
+    editor.on_click(Event(field[-1]))
+    assert len(editor.get_points()) == 2
+    baseline_line = editor.baseline_line
+    markers = editor.point_artists.copy()
+    assert baseline_line in ax.lines
+    editor.clear_artists()
+    assert baseline_line not in ax.lines
+    for m in markers:
+        assert m not in ax.lines
+    plt.close(fig)
+
+
 def test_lorentzian_fit_overlay():
     spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
