@@ -125,7 +125,12 @@ def configure_subplot(
         ax.grid(minor_grid, which="minor")
 
 
-def plot_residuals(field: Sequence[float], residuals: Sequence[float]) -> None:
+def plot_residuals(
+    field: Sequence[float],
+    residuals: Sequence[float],
+    *,
+    show: bool = True,
+):
     """Plot residuals of a fit against the magnetic field.
 
     A simple helper used to visualise the difference between measured data and
@@ -146,4 +151,6 @@ def plot_residuals(field: Sequence[float], residuals: Sequence[float]) -> None:
     ax.set_xlabel("Magnetic Field")
     ax.set_ylabel("Residuals")
     ax.set_title("Fit Residuals")
-    plt.show()
+    if show:
+        plt.show()
+    return fig, ax
