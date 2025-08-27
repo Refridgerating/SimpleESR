@@ -119,6 +119,69 @@ def calc_peak_to_peak(
     return float(abs(field[pos_idx] - field[neg_idx]))
 
 
+def peak_finder(
+    field: np.ndarray, intensity: np.ndarray, expected: int = 4
+) -> list[tuple[int, int]]:
+    """Automatically locate peak pairs in the provided data.
+
+    Parameters
+    ----------
+    field:
+        Array of magnetic-field values.
+    intensity:
+        Array of recorded intensity values corresponding to ``field``.
+    expected:
+        Total number of extrema to locate.  This should be an even number as
+        each absorption line exhibits a positive and a negative extremum.  The
+        default of ``4`` therefore corresponds to two absorption lines.
+
+    Returns
+    -------
+    list[tuple[int, int]]
+        A list of ``(positive_idx, negative_idx)`` tuples ordered by increasing
+        field.  Each tuple represents one absorption line.
+
+    Raises
+    ------
+    ValueError
+        If an insufficient number of extrema is found or if ``expected`` is not
+        a positive, even integer.
+    """
+
+    if expected < 2 or expected % 2 != 0:
+        raise ValueError("Expected number of peaks must be an even integer >= 2")
+
+    pos_peaks, _ = find_peaks(intensity)
+    neg_peaks, _ = find_peaks(-intensity)
+
+    n_pairs = expected // 2
+    if len(pos_peaks) < n_pairs or len(neg_peaks) < n_pairs:
+        raise ValueError("Not enough peaks found in the data")
+
+    pos_order = np.argsort(intensity[pos_peaks])[-n_pairs:]
+    neg_order = np.argsort(intensity[neg_peaks])[:n_pairs]
+    pos_idx = pos_peaks[pos_order]
+    neg_idx = neg_peaks[neg_order]
+
+    all_indices = np.concatenate([pos_idx, neg_idx])
+    sort_order = np.argsort(field[all_indices])
+    sorted_indices = all_indices[sort_order]
+
+    pairs: list[tuple[int, int]] = []
+    for i in range(0, len(sorted_indices), 2):
+        first = sorted_indices[i]
+        second = sorted_indices[i + 1]
+        if intensity[first] >= intensity[second]:
+            pos = first
+            neg = second
+        else:
+            pos = second
+            neg = first
+        pairs.append((int(pos), int(neg)))
+
+    return pairs
+
+
 def fit_lorentzian_derivative(
     field: np.ndarray,
     intensity: np.ndarray,
