@@ -205,19 +205,23 @@ def test_baseline_correction_manual():
     spectrum = ESRSpectrum(field=np.linspace(0, 1, 3), intensity=np.ones(3))
     selector = gui.SpanPeakSelector(spectrum)
     fig, selector.ax = plt.subplots()
-    line = MagicMock()
+    (line,) = selector.ax.plot(spectrum.field, spectrum.intensity)
     selector.trace_lines = [line]
     selector.ax.figure.canvas.draw_idle = MagicMock()
 
     corrected = np.zeros(3)
-    with patch("esr_lab.gui.messagebox.askyesno", return_value=False), \
-        patch("esr_lab.gui.Cursor"), \
-        patch("esr_lab.gui.plt.ginput", return_value=[(0.0, 1.0), (1.0, 1.0)]), \
-        patch("esr_lab.gui.baseline_correct", return_value=(corrected, corrected)) as bc:
+    with patch(
+        "esr_lab.gui.messagebox.askyesno", side_effect=[True, False]
+    ), patch(
+        "esr_lab.gui.plt.ginput", return_value=[(0.0, 1.0), (1.0, 1.0)]
+    ), patch(
+        "esr_lab.gui.baseline_correct", return_value=(corrected, corrected)
+    ) as bc:
         selector.baseline_correction()
         bc.assert_called_once()
-        line.set_ydata.assert_called_once_with(corrected)
-        assert np.allclose(selector.spectrum.intensity, corrected)
+        assert len(selector.spectra) == 2
+        assert np.allclose(selector.spectra[-1].intensity, corrected)
+        assert len(selector.trace_lines) == 2
 
     plt.close(fig)
 
