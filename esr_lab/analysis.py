@@ -211,11 +211,42 @@ def peak_finder(
     return pairs
 
 
+def chi_square(
+    observed: np.ndarray,
+    expected: np.ndarray,
+    dof: int | None = None,
+) -> float:
+    """Calculate the (reduced) chi-square statistic for two data sets.
+
+    Parameters
+    ----------
+    observed:
+        Array of measured values.
+    expected:
+        Array of expected values from a model.
+    dof:
+        Degrees of freedom. If provided, the returned value is the reduced
+        chi-square where ``chi2 / dof`` is computed.  When omitted the raw
+        chi-square sum of squared residuals is returned.
+
+    Returns
+    -------
+    float
+        The chi-square or reduced chi-square statistic.
+    """
+
+    residuals = observed - expected
+    chi2 = float(np.sum(residuals**2))
+    if dof is not None and dof > 0:
+        chi2 /= dof
+    return chi2
+
+
 def fit_lorentzian_derivative(
     field: np.ndarray,
     intensity: np.ndarray,
     p0: tuple[float, float, float, float] | None = None,
-) -> tuple[float, float, float, float]:
+) -> tuple[tuple[float, float, float, float], dict[str, object]]:
     """Fit a derivative ESR line to a Lorentzian derivative model.
 
     The measured ESR signal in derivative mode can be represented as the
@@ -247,6 +278,11 @@ def fit_lorentzian_derivative(
     -------
     tuple[float, float, float, float]
         Fitted parameters ``(H_res, delta, A, B)``.
+    dict[str, object]
+        A dictionary with diagnostic information.  Keys are ``"chi2"`` for the
+        reduced chi-square statistic, ``"stderr"`` containing the standard error
+        of the fitted parameters as a tuple and ``"residuals"`` holding the
+        residual array.
     """
 
     def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float) -> np.ndarray:
@@ -267,6 +303,17 @@ def fit_lorentzian_derivative(
 
     from scipy.optimize import curve_fit
 
-    popt, _ = curve_fit(_model, field, intensity, p0=p0)
+    popt, pcov = curve_fit(_model, field, intensity, p0=p0)
     h_res, delta, A, B = popt
-    return float(h_res), float(delta), float(A), float(B)
+
+    fitted = _model(field, h_res, delta, A, B)
+    residuals = intensity - fitted
+    chi2 = chi_square(intensity, fitted, dof=len(field) - len(popt))
+    stderr = np.sqrt(np.diag(pcov))
+    stats = {
+        "chi2": float(chi2),
+        "stderr": tuple(float(s) for s in stderr),
+        "residuals": residuals.astype(float),
+    }
+
+    return (float(h_res), float(delta), float(A), float(B)), stats

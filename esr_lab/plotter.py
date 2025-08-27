@@ -123,3 +123,27 @@ def configure_subplot(
         if minor_grid:
             ax.minorticks_on()
         ax.grid(minor_grid, which="minor")
+
+
+def plot_residuals(field: Sequence[float], residuals: Sequence[float]) -> None:
+    """Plot residuals of a fit against the magnetic field.
+
+    A simple helper used to visualise the difference between measured data and
+    a fitted model.  The function draws a scatter plot of the residuals and a
+    horizontal line at zero for reference.
+
+    Parameters
+    ----------
+    field:
+        Magnetic-field values of the data points.
+    residuals:
+        Residuals ``observed - fitted`` corresponding to ``field``.
+    """
+
+    fig, ax = plt.subplots()
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    ax.plot(field, residuals, "o")
+    ax.set_xlabel("Magnetic Field")
+    ax.set_ylabel("Residuals")
+    ax.set_title("Fit Residuals")
+    plt.show()
