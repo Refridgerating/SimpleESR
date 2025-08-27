@@ -456,6 +456,8 @@ class SpanPeakSelector:
 
         # Line objects of integrated absorption spectra per trace
         self.abs_lines: list[Line2D | None] = [None for _ in self.spectra]
+        # Variables for toggling absorption traces in the picker panel
+        self.abs_vars: list[tk.BooleanVar | None] = [None for _ in self.spectra]
 
         # Plot lines and visibility state for each spectrum
         self.trace_lines: list[Line2D] = []
@@ -1090,6 +1092,7 @@ class SpanPeakSelector:
         self.ranges_all.append([])
         self.auto_peaks_all.append([])
         self.abs_lines.append(None)
+        self.abs_vars.append(None)
 
         if (
             self.trace_combo is None
@@ -1164,7 +1167,39 @@ class SpanPeakSelector:
         )
         self.abs_lines[self.current] = line
 
-        self.ax.legend()
+        # Ensure the absorption trace can be toggled in the picker panel
+        if self.toggle_frame is None and self.control_frame is not None and self.root is not None:
+            self.toggle_frame = tk.Frame(self.control_frame)
+            self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+            tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
+            self.trace_vars = []
+            for i, lbl in enumerate(self.labels):
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=lbl,
+                    variable=var,
+                    command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+
+        if self.toggle_frame is not None:
+            var = self.abs_vars[self.current]
+            if var is None:
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=f"{self.labels[self.current]} (absorption)",
+                    variable=var,
+                    command=lambda idx=self.current, v=var: self._toggle_absorption(idx, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.abs_vars[self.current] = var
+            else:
+                var.set(True)
+
+        self.update_legend()
         self.ax.figure.canvas.draw_idle()
 
     # ------------------------------------------------------------------
@@ -1302,9 +1337,22 @@ class SpanPeakSelector:
             return
 
         self.trace_lines[index].set_visible(show)
-        if index < len(self.abs_lines) and self.abs_lines[index] is not None:
-            self.abs_lines[index].set_visible(show)
 
+        self.update_legend()
+        if self.ax is not None:
+            self.ax.figure.canvas.draw_idle()
+
+    def _toggle_absorption(self, index: int, show: bool) -> None:
+        """Show or hide the integrated absorption trace for the given index."""
+
+        if not (0 <= index < len(self.abs_lines)):
+            return
+
+        line = self.abs_lines[index]
+        if line is None:
+            return
+
+        line.set_visible(show)
         self.update_legend()
         if self.ax is not None:
             self.ax.figure.canvas.draw_idle()
@@ -1323,7 +1371,10 @@ class SpanPeakSelector:
     def update_legend(self) -> None:
         """Redraw the legend to reflect current line styles."""
 
-        if self.ax is None or len(self.trace_lines) <= 1:
+        if self.ax is None:
+            return
+
+        if len(self.trace_lines) <= 1 and not any(l is not None for l in self.abs_lines):
             return
 
         handles: list[Line2D] = []
@@ -1333,6 +1384,11 @@ class SpanPeakSelector:
             if line.get_visible():
                 handles.append(line)
                 labels.append(label)
+
+        for line in self.abs_lines:
+            if line is not None and line.get_visible():
+                handles.append(line)
+                labels.append(line.get_label())
 
         if handles:
             leg = self.ax.legend(handles, labels)

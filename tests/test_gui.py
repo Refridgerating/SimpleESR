@@ -508,6 +508,44 @@ def test_integrate_trace_plots_absorption():
     plt.close(fig)
 
 
+def test_integrate_trace_adds_toggle():
+    field = np.linspace(0, 4, 5)
+    intensity = np.array([0.0, 1.0, 0.0, -1.0, 0.0])
+    spec = ESRSpectrum(field=field, intensity=intensity)
+    selector = gui.SpanPeakSelector(spec)
+    fig, selector.ax = plt.subplots()
+    selector.toggle_frame = MagicMock()
+
+    with patch("esr_lab.gui.tk.BooleanVar") as MockVar, patch(
+        "esr_lab.gui.tk.Checkbutton"
+    ) as MockChk:
+        selector.integrate_trace()
+        MockVar.assert_called_once_with(value=True)
+        MockChk.assert_called_once()
+        MockChk.return_value.pack.assert_called_once_with(anchor="w")
+        assert selector.abs_vars[0] is MockVar.return_value
+
+    plt.close(fig)
+
+
+def test_toggle_absorption_line():
+    field = np.linspace(0, 4, 5)
+    intensity = np.array([0.0, 1.0, 0.0, -1.0, 0.0])
+    spec = ESRSpectrum(field=field, intensity=intensity)
+    selector = gui.SpanPeakSelector(spec)
+    fig, selector.ax = plt.subplots()
+    selector.ax.plot(field, intensity)
+    selector.integrate_trace()
+    line = selector.abs_lines[0]
+    selector.update_legend = MagicMock()
+    selector.ax.figure.canvas.draw_idle = MagicMock()
+    selector._toggle_absorption(0, False)
+    assert not line.get_visible()
+    selector.update_legend.assert_called_once()
+    selector.ax.figure.canvas.draw_idle.assert_called_once()
+    plt.close(fig)
+
+
 def test_trace_visibility_toggle_updates_legend():
     spec1 = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))
