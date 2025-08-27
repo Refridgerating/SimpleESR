@@ -8,6 +8,7 @@ from .analysis import (
     calc_fwhm,
     fit_lorentzian_derivative,
     calc_peak_to_peak,
+    peak_finder,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "calc_fwhm",
     "fit_lorentzian_derivative",
     "calc_peak_to_peak",
+    "peak_finder",
 ]
