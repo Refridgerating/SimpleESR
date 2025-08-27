@@ -337,6 +337,10 @@ class SpanPeakSelector:
         # Line objects of integrated absorption spectra per trace
         self.abs_lines: list[Line2D | None] = [None for _ in self.spectra]
 
+        # Plot lines and visibility state for each spectrum
+        self.trace_lines: list[Line2D] = []
+        self.trace_vars: list[tk.BooleanVar] = []
+
         # GUI related attributes are initialised lazily in ``show`` so that the
         # class can be instantiated in environments without a display (e.g. the
         # test suite).
@@ -985,16 +989,42 @@ class SpanPeakSelector:
         self._update_metadata_display()
 
     # ------------------------------------------------------------------
+    def _toggle_trace(self, index: int, show: bool) -> None:
+        """Show or hide the trace at the given index."""
+
+        if not (0 <= index < len(self.trace_lines)):
+            return
+
+        self.trace_lines[index].set_visible(show)
+        if index < len(self.abs_lines) and self.abs_lines[index] is not None:
+            self.abs_lines[index].set_visible(show)
+
+        self.update_legend()
+        if self.ax is not None:
+            self.ax.figure.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
     def update_legend(self) -> None:
         """Redraw the legend to reflect current line styles."""
 
-        if self.ax is None or len(self.spectra) <= 1:
+        if self.ax is None or len(self.trace_lines) <= 1:
             return
 
-        for line, label in zip(self.ax.lines[: len(self.spectra)], self.labels):
+        handles: list[Line2D] = []
+        labels: list[str] = []
+        for line, label in zip(self.trace_lines, self.labels):
             line.set_label(label)
+            if line.get_visible():
+                handles.append(line)
+                labels.append(label)
 
-        self.ax.legend()
+        if handles:
+            self.ax.legend(handles, labels)
+        else:
+            leg = self.ax.get_legend()
+            if leg is not None:
+                leg.remove()
+
         self.ax.figure.canvas.draw_idle()
 
     # ------------------------------------------------------------------
@@ -1033,12 +1063,13 @@ class SpanPeakSelector:
         # ------------------------------------------------------------------
         # Plot area with toolbar on top
         fig, self.ax = plt.subplots()
+        self.trace_lines = []
         for spec in self.spectra:
-            self.ax.plot(spec.field, spec.intensity)
-        if len(self.spectra) > 1:
-            self.ax.legend(self.labels)
+            line, = self.ax.plot(spec.field, spec.intensity)
+            self.trace_lines.append(line)
         self.ax.set_xlabel("Magnetic Field")
         self.ax.set_ylabel("Intensity")
+        self.update_legend()
         canvas = FigureCanvasTkAgg(fig, master=plot_frame)
         canvas.draw()
         toolbar = NavigationToolbarNoSubplots(
@@ -1073,6 +1104,21 @@ class SpanPeakSelector:
             )
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            toggle_frame = tk.Frame(control_frame)
+            toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+            tk.Label(toggle_frame, text="Visible traces").pack(anchor="w")
+            self.trace_vars = []
+            for i, label in enumerate(self.labels):
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    toggle_frame,
+                    text=label,
+                    variable=var,
+                    command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
 
         # Button rows for compact layout
         button_row1 = tk.Frame(control_frame)
