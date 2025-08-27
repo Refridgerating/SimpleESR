@@ -87,3 +87,13 @@ def test_plot_residuals_calls_show():
         plot_residuals(field, residuals)
         show_mock.assert_called_once()
     plt.close("all")
+
+
+def test_plot_residuals_returns_figure_without_show():
+    field = np.array([0.0, 1.0])
+    residuals = np.array([0.1, -0.1])
+    with patch("matplotlib.pyplot.show") as show_mock:
+        fig, ax = plot_residuals(field, residuals, show=False)
+        show_mock.assert_not_called()
+        assert ax.get_ylabel() == "Residuals"
+    plt.close(fig)

@@ -358,6 +358,8 @@ class SpanPeakSelector:
         self.compare_btn: tk.Button | ttk.Button | None = None
         self.compare_tree: ttk.Treeview | None = None
         self.trace_combo: ttk.Combobox | None = None
+        self.plot_frame: tk.Frame | None = None
+        self.extra_canvases: list[FigureCanvasTkAgg] = []
         self.trace_var: tk.StringVar | None = None
         self.peak_slider: tk.Scale | None = None
         self.selected_peak: float | None = None
@@ -755,7 +757,15 @@ class SpanPeakSelector:
         self.ax.figure.canvas.draw_idle()
 
         # Show residual plot
-        plot_residuals(field, residuals)
+        res_plot = plot_residuals(field, residuals, show=self.plot_frame is None)
+        if self.plot_frame is not None and isinstance(res_plot, tuple):
+            fig_r, _ax_r = res_plot
+            canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)
+            canvas_r.draw()
+            canvas_r.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            self.extra_canvases.append(canvas_r)
+            if self.root is not None:
+                self.root.update_idletasks()
 
         accept = messagebox.askyesno(
             "Lorentzian Fit",
@@ -1071,8 +1081,42 @@ class SpanPeakSelector:
             ButtonCls = tk.Button
             button_kwargs = {}
 
-        plot_frame = tk.Frame(self.root)
-        plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        try:
+            plot_container = tk.Frame(self.root)
+            plot_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+            plot_canvas = tk.Canvas(plot_container, highlightthickness=0)
+            plot_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            plot_scroll = tk.Scrollbar(plot_container, orient=tk.VERTICAL, command=plot_canvas.yview)
+            plot_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+            plot_canvas.configure(yscrollcommand=plot_scroll.set)
+
+            plot_frame = tk.Frame(plot_canvas)
+            plot_id = plot_canvas.create_window((0, 0), window=plot_frame, anchor="nw")
+
+            def _on_plot_configure(_event: tk.Event) -> None:
+                plot_canvas.configure(scrollregion=plot_canvas.bbox("all"))
+
+            plot_frame.bind("<Configure>", _on_plot_configure)
+
+            def _on_plot_canvas_configure(event: tk.Event) -> None:
+                plot_canvas.itemconfigure(plot_id, width=event.width)
+
+            plot_canvas.bind("<Configure>", _on_plot_canvas_configure)
+
+            def _on_plot_mousewheel(event: tk.Event) -> None:
+                plot_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+            plot_canvas.bind(
+                "<Enter>", lambda _e: plot_canvas.bind_all("<MouseWheel>", _on_plot_mousewheel)
+            )
+            plot_canvas.bind(
+                "<Leave>", lambda _e: plot_canvas.unbind_all("<MouseWheel>")
+            )
+        except Exception:
+            plot_frame = tk.Frame(self.root)
+            plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        self.plot_frame = plot_frame
+
         try:
             panel_container = tk.Frame(self.root)
             panel_container.pack(side=tk.RIGHT, fill=tk.Y)
