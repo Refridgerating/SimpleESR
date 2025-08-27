@@ -519,15 +519,39 @@ def test_trace_visibility_toggle_updates_legend():
         selector.trace_lines.append(line)
 
     selector.update_legend()
-    assert len(selector.ax.get_legend().get_texts()) == 2
+    legend = selector.ax.get_legend()
+    assert legend.get_draggable()
+    assert len(legend.get_texts()) == 2
 
     selector._toggle_trace(1, False)
     assert not selector.trace_lines[1].get_visible()
+    assert selector.ax.get_legend().get_draggable()
     assert len(selector.ax.get_legend().get_texts()) == 1
 
     selector._toggle_trace(1, True)
     assert selector.trace_lines[1].get_visible()
+    assert selector.ax.get_legend().get_draggable()
     assert len(selector.ax.get_legend().get_texts()) == 2
+    plt.close(fig)
+
+
+def test_set_label_updates_legend():
+    spec1 = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))
+    selector = gui.SpanPeakSelector([spec1, spec2], labels=["one", "two"])
+    fig, selector.ax = plt.subplots()
+    selector.trace_lines = []
+    for spec in selector.spectra:
+        line, = selector.ax.plot(spec.field, spec.intensity)
+        selector.trace_lines.append(line)
+
+    selector.update_legend()
+    assert [t.get_text() for t in selector.ax.get_legend().get_texts()] == ["one", "two"]
+
+    selector._set_label(1, "new")
+    selector.update_legend()
+    assert selector.labels[1] == "new"
+    assert [t.get_text() for t in selector.ax.get_legend().get_texts()] == ["one", "new"]
     plt.close(fig)
 
 
