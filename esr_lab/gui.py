@@ -20,6 +20,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.widgets import SpanSelector, Cursor
 from typing import Callable
 from scipy.integrate import cumulative_trapezoid
+import sympy as sp
 
 from .analysis import (
     calc_fwhm,
@@ -1138,8 +1139,13 @@ class SpanPeakSelector:
         for name, (desc, formula) in FUNCTION_DETAILS.items():
             lines.append(name)
             lines.append(f"    {desc}")
-            if formula:
-                lines.append(f"    {formula}")
+            if formula is not None:
+                if isinstance(formula, sp.Basic):
+                    pretty_lines = sp.pretty(formula, use_unicode=True).splitlines()
+                else:
+                    pretty_lines = str(formula).splitlines()
+                for fl in pretty_lines:
+                    lines.append(f"    {fl}")
             lines.append("")
         messagebox.showinfo("Functions", "\n".join(lines).rstrip())
 
