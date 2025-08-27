@@ -244,7 +244,7 @@ def baseline_correct(
     if points:
         xp = np.array([p[0] for p in points], dtype=float)
         yp = np.array([p[1] for p in points], dtype=float)
-        deg = min(len(xp) - 1, 3)
+        deg = min(degree, len(xp) - 1)
         coeffs = np.polyfit(xp, yp, deg)
     else:
         coeffs = np.polyfit(field, intensity, degree)

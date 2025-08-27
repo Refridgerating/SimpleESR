@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.widgets import SpanSelector, Cursor
+from matplotlib.widgets import SpanSelector
 from typing import Callable
 from scipy.integrate import cumulative_trapezoid
 import sympy as sp
@@ -33,6 +33,7 @@ from .analysis import (
 )
 from .io import ESRLoader
 from .plotter import plot_residuals
+from .spectrum import ESRSpectrum
 
 
 def _filter_ticks(ticks: list[float], lower: float, upper: float) -> list[float]:
@@ -363,6 +364,8 @@ class SpanPeakSelector:
         self.compare_tree: ttk.Treeview | None = None
         self.trace_combo: ttk.Combobox | None = None
         self.plot_frame: tk.Frame | None = None
+        self.control_frame: tk.Frame | None = None
+        self.toggle_frame: tk.Frame | None = None
         self.extra_canvases: list[FigureCanvasTkAgg] = []
         self.trace_var: tk.StringVar | None = None
         self.peak_slider: tk.Scale | None = None
@@ -880,40 +883,157 @@ class SpanPeakSelector:
         if self.ax is None:
             return
 
-        use_auto = messagebox.askyesno(
+        use_poly = messagebox.askyesno(
             "Baseline Correction",
+            "Use polynomial baseline?\nSelect 'No' for linear baseline.",
+        )
+        use_auto = messagebox.askyesno(
+            "Baseline Points",
             "Use automatic baseline fit?\nSelect 'No' for manual placement.",
         )
 
         field = self.spectrum.field
         intensity = self.spectrum.intensity
+        degree = 3 if use_poly else 1
 
         if use_auto:
-            corrected, _baseline = baseline_correct(field, intensity)
+            n = min(5, len(field) // 2)
+            pts = list(zip(field[:n], intensity[:n])) + list(
+                zip(field[-n:], intensity[-n:])
+            )
+            corrected, _baseline = baseline_correct(
+                field, intensity, points=pts, degree=degree
+            )
         else:
-            fig = self.ax.figure
-            plt.figure(fig.number)
-            cursor = Cursor(self.ax, useblit=True, color="red", linewidth=1)
-            try:
-                pts = plt.ginput(n=-1, timeout=-1)
-            except Exception:
-                pts = []
-            finally:
+            pts: list[tuple[float, float]] = []
+            if self.root is None:
+                fig = self.ax.figure
+                plt.figure(fig.number)
                 try:
-                    cursor.disconnect_events()
+                    raw = plt.ginput(n=-1, timeout=-1)
                 except Exception:
-                    pass
-            if len(pts) < 2:
-                messagebox.showwarning(
-                    "Baseline Correction",
-                    "At least two points are required for manual baseline correction.",
-                )
-                return
-            corrected, _baseline = baseline_correct(field, intensity, points=pts)
+                    raw = []
+                if len(raw) < 2:
+                    messagebox.showwarning(
+                        "Baseline Correction",
+                        "At least two points are required for manual baseline correction.",
+                    )
+                    return
+                for x, y in raw:
+                    idx = int(
+                        np.argmin((field - x) ** 2 + (intensity - y) ** 2)
+                    )
+                    pts.append((float(field[idx]), float(intensity[idx])))
+            else:
+                count_var = tk.StringVar(value="Selected points: 0")
+                dialog = tk.Toplevel(self.root)
+                dialog.title("Baseline Points")
+                tk.Label(dialog, textvariable=count_var).pack(padx=10, pady=5)
+                done = tk.BooleanVar(value=False)
 
-        self.spectrum.intensity = corrected
-        line = self.trace_lines[self.current]
-        line.set_ydata(corrected)
+                def confirm() -> None:
+                    done.set(True)
+                    dialog.destroy()
+
+                tk.Button(dialog, text="Confirm selection", command=confirm).pack(
+                    padx=10, pady=5
+                )
+
+                def onclick(event):
+                    if event.inaxes != self.ax:
+                        return
+                    idx = int(
+                        np.argmin(
+                            (field - event.xdata) ** 2
+                            + (intensity - event.ydata) ** 2
+                        )
+                    )
+                    x = float(field[idx])
+                    y = float(intensity[idx])
+                    pts.append((x, y))
+                    count_var.set(f"Selected points: {len(pts)}")
+                    self.ax.plot(x, y, "ro")
+                    self.ax.figure.canvas.draw_idle()
+
+                cid = self.ax.figure.canvas.mpl_connect(
+                    "button_press_event", onclick
+                )
+                dialog.wait_variable(done)
+                self.ax.figure.canvas.mpl_disconnect(cid)
+
+                if len(pts) < 2:
+                    messagebox.showwarning(
+                        "Baseline Correction",
+                        "At least two points are required for manual baseline correction.",
+                    )
+                    return
+
+            corrected, _baseline = baseline_correct(
+                field, intensity, points=pts, degree=degree
+            )
+
+        label = f"{self.labels[self.current]} (baseline corrected)"
+        (line,) = self.ax.plot(field, corrected, label=label)
+        self.trace_lines.append(line)
+        self.spectra.append(
+            ESRSpectrum(
+                field=field.copy(),
+                intensity=corrected.copy(),
+                metadata=self.spectrum.metadata,
+            )
+        )
+        self.labels.append(label)
+        self.results_all.append([])
+        self.lorentz_all.append([])
+        self.ranges_all.append([])
+        self.auto_peaks_all.append([])
+        self.abs_lines.append(None)
+
+        if (
+            self.trace_combo is None
+            and self.control_frame is not None
+            and self.root is not None
+        ):
+            self.trace_var = tk.StringVar(value=self.labels[0])
+            self.trace_combo = ttk.Combobox(
+                self.control_frame,
+                textvariable=self.trace_var,
+                values=self.labels,
+                state="readonly",
+            )
+            self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            self.toggle_frame = tk.Frame(self.control_frame)
+            self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+            tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
+            self.trace_vars = []
+            for i, lbl in enumerate(self.labels):
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=lbl,
+                    variable=var,
+                    command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+        else:
+            if self.trace_combo is not None and self.trace_var is not None:
+                self.trace_combo["values"] = self.labels
+            if self.toggle_frame is not None:
+                var = tk.BooleanVar(value=True)
+                idx = len(self.trace_lines) - 1
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=label,
+                    variable=var,
+                    command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+
+        self.ax.legend()
         self.ax.figure.canvas.draw_idle()
 
     # ------------------------------------------------------------------
@@ -1296,6 +1416,7 @@ class SpanPeakSelector:
         # Controls
         control_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         control_frame.pack(fill=tk.X, pady=(0, 10))
+        self.control_frame = control_frame
         tk.Label(control_frame, text="Controls", font=("TkDefaultFont", 10, "bold")).pack(
             anchor="w", padx=5, pady=(5, 0)
         )
@@ -1328,6 +1449,7 @@ class SpanPeakSelector:
                 )
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
+            self.toggle_frame = toggle_frame
 
         # Button rows for compact layout
         button_row1 = tk.Frame(control_frame)
