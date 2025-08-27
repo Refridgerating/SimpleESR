@@ -27,6 +27,7 @@ from .analysis import (
     fit_lorentzian_derivative,
     calc_peak_to_peak,
     peak_finder as auto_peak_finder,
+    FUNCTION_DETAILS,
 )
 from .io import ESRLoader
 from .plotter import plot_residuals
@@ -1065,11 +1066,64 @@ class SpanPeakSelector:
         self.ax.figure.canvas.draw_idle()
 
     # ------------------------------------------------------------------
+    def _show_readme(self) -> None:
+        """Display the project README in a message box."""
+        try:
+            readme_path = Path(__file__).resolve().parent.parent / "README.md"
+            text = readme_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            text = f"Unable to load README: {exc}"
+        messagebox.showinfo("README", text)
+
+    # ------------------------------------------------------------------
+    def _show_workflow(self) -> None:
+        """Show a brief description of the typical workflow."""
+        workflow = (
+            "1. Load one or more CSV files containing ESR spectra.\n"
+            "2. Use the controls to select peaks and perform analyses.\n"
+            "3. Review the results in the tables on the right.\n"
+            "4. Optionally fit Lorentzian lines or compare spectra."
+        )
+        messagebox.showinfo("Workflow", workflow)
+
+    # ------------------------------------------------------------------
+    def _show_functions(self) -> None:
+        """List available analysis functions with short descriptions."""
+        lines: list[str] = []
+        for name, (desc, formula) in FUNCTION_DETAILS.items():
+            lines.append(f"{name}: {desc}")
+            if formula:
+                lines.append(f"    {formula}")
+            lines.append("")
+        messagebox.showinfo("Functions", "\n".join(lines))
+
+    # ------------------------------------------------------------------
+    def _create_menu(self) -> None:
+        """Create the menu bar with a Help menu."""
+        if self.root is None:
+            return
+        try:
+            menubar = tk.Menu(self.root)
+            help_menu = tk.Menu(menubar, tearoff=0)
+            help_menu.add_command(label="Readme", command=self._show_readme)
+            help_menu.add_command(label="Workflow", command=self._show_workflow)
+            help_menu.add_command(label="Functions", command=self._show_functions)
+            menubar.add_cascade(label="Help", menu=help_menu)
+            self.root.config(menu=menubar)
+        except Exception:
+            # In headless environments or tests the Tk primitives may not be
+            # fully initialised.  Failing silently keeps the rest of the GUI
+            # functional while still allowing the menu to appear when running
+            # interactively.
+            pass
+
+    # ------------------------------------------------------------------
     def show(self) -> None:
         """Start the Tkinter main loop and display the analysis GUI."""
 
         self.root = tk.Tk()
         self.root.title("ESR Spectrum")
+        self._create_menu()
 
         ButtonCls: type[tk.Button] | type[ttk.Button] = ttk.Button
         button_kwargs: dict[str, object] = {"style": "Compact.TButton"}

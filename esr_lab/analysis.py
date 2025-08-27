@@ -317,3 +317,30 @@ def fit_lorentzian_derivative(
     }
 
     return (float(h_res), float(delta), float(A), float(B)), stats
+
+
+# ---------------------------------------------------------------------------
+# Metadata for help menu
+# ---------------------------------------------------------------------------
+FUNCTION_DETAILS: dict[str, tuple[str, str]] = {
+    "find_peak": (
+        "Locate the positive and negative peaks within a field window",
+        "",
+    ),
+    "calc_fwhm": (
+        "Estimate the full width at half maximum (FWHM)",
+        "FWHM = |H_+ - H_-|",
+    ),
+    "calc_peak_to_peak": (
+        "Compute the peak-to-peak separation \u0394H_pp",
+        "\u0394H_pp = |H_+ - H_-|",
+    ),
+    "peak_finder": (
+        "Automatically locate peak pairs in the provided data",
+        "",
+    ),
+    "fit_lorentzian_derivative": (
+        "Fit a derivative ESR line to a Lorentzian derivative model",
+        "dI/dH = A\u00b7\u2202_H L_abs(H) + B\u00b7\u2202_H L_disp(H)",
+    ),
+}
