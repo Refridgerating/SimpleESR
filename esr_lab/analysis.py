@@ -126,7 +126,7 @@ def peak_finder(
     expected: int = 4,
     width: float = 15.0,
     method: str = "auto",
-) -> list[tuple[int, int]]:
+) -> list[tuple[int, int]] | list[int]:
     """Automatically locate peak pairs in the provided data.
 
     Two approaches are supported:
@@ -141,9 +141,8 @@ def peak_finder(
         searching for extrema in a window of ``±width`` around each crossing.
 
     ``method="curvature"``
-        Intended for absorption spectra.  It evaluates the curvature of the
-        trace via the first derivative and pairs up maxima and minima of this
-        derivative.  The ``width`` parameter is ignored in this mode.
+        Intended for absorption spectra.  It searches the trace for local
+        maxima only.  The ``width`` parameter is ignored in this mode.
 
     Parameters
     ----------
@@ -152,9 +151,12 @@ def peak_finder(
     intensity:
         Array of recorded intensity values corresponding to ``field``.
     expected:
-        Total number of extrema to locate.  This should be an even number as
-        each absorption line exhibits a positive and a negative extremum.  The
-        default of ``4`` therefore corresponds to two absorption lines.
+        Total number of extrema to locate.  This should be an even number.  For
+        derivative data the value counts individual maxima and minima, whereas
+        for absorption data the number of positive peaks returned is
+        ``expected // 2``.  The default of ``4`` therefore corresponds to two
+        peak pairs in derivative mode or two positive peaks in absorption
+        mode.
     width:
         Half width in magnetic-field units used around each zero crossing to
         determine the local maxima and minima.  The default of ``15.0`` mT
@@ -167,9 +169,12 @@ def peak_finder(
 
     Returns
     -------
-    list[tuple[int, int]]
-        A list of ``(positive_idx, negative_idx)`` tuples ordered by increasing
-        field.  Each tuple represents one absorption line.
+    list[tuple[int, int]] | list[int]
+        For derivative data (``method="zero"``) a list of ``(positive_idx,
+        negative_idx)`` tuples ordered by increasing field.  Each tuple
+        represents one absorption line.  For absorption data
+        (``method="curvature"``) a list of indices of positive peaks ordered by
+        increasing field is returned.
 
     Raises
     ------
@@ -241,36 +246,16 @@ def peak_finder(
         return pairs
 
     # Curvature-based peak finder for absorption traces
-    deriv = np.gradient(intensity, field)
-    pos_peaks, _ = find_peaks(deriv)
-    neg_peaks, _ = find_peaks(-deriv)
-    if pos_peaks.size == 0 or neg_peaks.size == 0:
-        raise ValueError("Both positive and negative peaks are required in the data")
-
-    labeled = [*( (int(i), "pos") for i in pos_peaks ), *( (int(i), "neg") for i in neg_peaks )]
-    labeled.sort(key=lambda t: field[t[0]])
-
-    pairs: list[tuple[int, int]] = []
-    current_pos: int | None = None
-    for idx, kind in labeled:
-        if kind == "pos":
-            current_pos = idx
-        elif kind == "neg" and current_pos is not None:
-            pairs.append((current_pos, idx))
-            current_pos = None
-
-    n_pairs = expected // 2
-    if len(pairs) < n_pairs:
+    n_peaks = expected // 2
+    pos_peaks, _ = find_peaks(intensity)
+    if pos_peaks.size < n_peaks:
         raise ValueError("Not enough peaks found in the data")
 
-    pairs = sorted(
-        pairs,
-        key=lambda p: abs(deriv[p[0]] - deriv[p[1]]),
-        reverse=True,
-    )[:n_pairs]
-
-    pairs.sort(key=lambda p: field[p[0]])
-    return pairs
+    # Select the most prominent peaks by their height
+    top = np.argsort(intensity[pos_peaks])[::-1][:n_peaks]
+    peaks = pos_peaks[top]
+    peaks.sort()
+    return [int(p) for p in peaks]
 
 
 def baseline_correct(
