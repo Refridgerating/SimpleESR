@@ -832,13 +832,11 @@ class SpanPeakSelector:
         if num is None:
             return
         try:
-            label = self.labels[self.current]
-            method = "curvature" if label.endswith("(absorption)") else "zero"
             pairs = auto_peak_finder(
                 self.spectrum.field,
                 self.spectrum.intensity,
                 expected=int(num),
-                method=method,
+                method="auto",
             )
         except ValueError as exc:
             messagebox.showerror("Peak Finder", str(exc))

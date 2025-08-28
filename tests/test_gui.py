@@ -128,11 +128,10 @@ def test_peak_finder_tabulates_positions():
     )
 
 
-def test_peak_finder_switches_to_curvature():
+def test_peak_finder_uses_auto_method():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.array([0, 1, 0, -1, 0]))
     selector = gui.SpanPeakSelector(spectrum)
     selector.ax = None
-    selector.labels[0] = "Trace 1 (absorption)"
     captured: dict[str, str] = {}
 
     def fake_peak_finder(field, intensity, expected=4, width=15.0, method="zero"):
@@ -145,7 +144,7 @@ def test_peak_finder_switches_to_curvature():
         patch("esr_lab.gui.messagebox.showinfo"):
         selector.peak_finder()
 
-    assert captured["method"] == "curvature"
+    assert captured["method"] == "auto"
 
 
 def test_results_persist_across_analyses():
