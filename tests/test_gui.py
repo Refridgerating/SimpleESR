@@ -213,7 +213,8 @@ def test_baseline_correction_manual():
 
     corrected = np.zeros(3)
     with patch(
-        "esr_lab.gui.messagebox.askyesno", side_effect=[True, False]
+        "esr_lab.gui.SpanPeakSelector._get_baseline_options",
+        return_value=(True, False),
     ), patch(
         "esr_lab.gui.plt.ginput",
         return_value=[(1.9, 100.0), (0.1, -50.0)],
