@@ -93,6 +93,16 @@ def test_peak_finder_curvature_on_absorption():
     assert np.isclose(field[neg], 1 / np.sqrt(2), atol=0.1)
 
 
+def test_peak_finder_auto_switches_to_curvature():
+    field = np.linspace(-5, 5, 10001)
+    intensity = np.exp(-field**2)
+    pairs = peak_finder(field, intensity, expected=2)
+    assert len(pairs) == 1
+    pos, neg = pairs[0]
+    assert np.isclose(field[pos], -1 / np.sqrt(2), atol=0.1)
+    assert np.isclose(field[neg], 1 / np.sqrt(2), atol=0.1)
+
+
 def test_baseline_correct_manual_and_auto():
     field = np.linspace(0, 10, 11)
     baseline = 0.5 * field + 1.0

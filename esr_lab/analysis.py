@@ -125,13 +125,18 @@ def peak_finder(
     intensity: np.ndarray,
     expected: int = 4,
     width: float = 15.0,
-    method: str = "zero",
+    method: str = "auto",
 ) -> list[tuple[int, int]]:
     """Automatically locate peak pairs in the provided data.
 
     Two approaches are supported:
 
-    ``method="zero"`` (default)
+    ``method="auto"`` (default)
+        Automatically chooses between the ``"zero"`` and ``"curvature"``
+        strategies based on the presence of zero crossings in ``intensity``.
+        If no zero crossings are found, the curvature approach is used.
+
+    ``method="zero"``
         Operates on derivative-mode data by locating zero crossings and
         searching for extrema in a window of ``±width`` around each crossing.
 
@@ -154,7 +159,7 @@ def peak_finder(
         Half width in magnetic-field units used around each zero crossing to
         determine the local maxima and minima.  The default of ``15.0`` mT
         mirrors the manual analysis range used in the GUI.  Ignored when
-        ``method="curvature"``.
+        ``"curvature"``.
     method:
         ``"zero"`` to base the detection on zero crossings of the provided
         trace (appropriate for derivative spectra) or ``"curvature"`` to analyse
@@ -177,10 +182,11 @@ def peak_finder(
         raise ValueError("Expected number of peaks must be an even integer >= 2")
 
     method = method.lower()
-    if method not in {"zero", "curvature"}:
-        raise ValueError("method must be 'zero' or 'curvature'")
+    if method not in {"zero", "curvature", "auto"}:
+        raise ValueError("method must be 'zero', 'curvature', or 'auto'")
 
-    if method == "zero":
+    zero_crossings: np.ndarray | None = None
+    if method in {"zero", "auto"}:
         # Identify zero crossings where the signal changes from positive to
         # negative.  Zeros are ignored by using ``nan`` and compressing the array
         # to regions of constant sign.
@@ -192,7 +198,12 @@ def peak_finder(
         nonzero_sign = sign[nonzero_idx]
         changes = np.where((nonzero_sign[:-1] > 0) & (nonzero_sign[1:] < 0))[0]
         zero_crossings = (nonzero_idx[changes] + nonzero_idx[changes + 1]) // 2
+        if zero_crossings.size == 0:
+            method = "curvature"
+        elif method == "auto":
+            method = "zero"
 
+    if method == "zero" and zero_crossings is not None:
         pairs: list[tuple[int, int]] = []
         for i, zc in enumerate(zero_crossings):
             center = field[zc]
