@@ -21,6 +21,7 @@ from matplotlib.widgets import SpanSelector
 from typing import Callable
 from scipy.integrate import cumulative_trapezoid
 import sympy as sp
+import copy
 
 from .analysis import (
     calc_fwhm,
@@ -484,6 +485,9 @@ class SpanPeakSelector:
         self.selected_peak: float | None = None
         self.meta_label: tk.Label | None = None
         self.metadata_text: str = ""
+        self.delete_btn: tk.Button | ttk.Button | None = None
+        self.undo_btn: tk.Button | ttk.Button | None = None
+        self._history: list[dict[str, object]] = []
         # Keep track of which peak (1 or 2) the user is analysing.
         # Default to the first peak so headless usage remains functional
         # without invoking the interactive prompt.
@@ -591,6 +595,83 @@ class SpanPeakSelector:
             return None
 
     # ------------------------------------------------------------------
+    def _save_state(self) -> None:
+        """Store a deep copy of the current state for undo."""
+
+        state = {
+            "spectra": [
+                ESRSpectrum(
+                    field=s.field.copy(),
+                    intensity=s.intensity.copy(),
+                    metadata=copy.deepcopy(s.metadata),
+                )
+                for s in self.spectra
+            ],
+            "labels": self.labels.copy(),
+            "results_all": copy.deepcopy(self.results_all),
+            "lorentz_all": copy.deepcopy(self.lorentz_all),
+            "ranges_all": copy.deepcopy(self.ranges_all),
+            "auto_peaks_all": copy.deepcopy(self.auto_peaks_all),
+            "current": self.current,
+        }
+        self._history.append(state)
+        if self.undo_btn is not None:
+            self.undo_btn.config(state=tk.NORMAL)
+
+    def undo(self) -> None:
+        """Revert the last operation if possible."""
+
+        if not self._history:
+            return
+        state = self._history.pop()
+        self.spectra = state["spectra"]
+        self.labels = state["labels"]
+        self.results_all = state["results_all"]
+        self.lorentz_all = state["lorentz_all"]
+        self.ranges_all = state["ranges_all"]
+        self.auto_peaks_all = state["auto_peaks_all"]
+        self.current = state["current"]
+        self.spectrum = self.spectra[self.current]
+        self.results = self.results_all[self.current]
+        self.lorentz_results = self.lorentz_all[self.current]
+        self.ranges = self.ranges_all[self.current]
+        self.auto_peaks = self.auto_peaks_all[self.current]
+        if self.ax is not None:
+            self.ax.clear()
+            self.trace_lines = []
+            for sp, lbl in zip(self.spectra, self.labels):
+                (line,) = self.ax.plot(sp.field, sp.intensity, label=lbl)
+                self.trace_lines.append(line)
+            self.ax.figure.canvas.draw_idle()
+        if self.trace_combo is not None and self.trace_var is not None:
+            self.trace_combo["values"] = self.labels
+            self.trace_var.set(self.labels[self.current])
+        if self.toggle_frame is not None:
+            for child in self.toggle_frame.winfo_children():
+                child.destroy()
+            tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
+            self.trace_vars = []
+            for i, lbl in enumerate(self.labels):
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=lbl,
+                    variable=var,
+                    command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+        if self.delete_btn is not None:
+            state_str = tk.NORMAL if len(self.spectra) > 1 else tk.DISABLED
+            self.delete_btn.config(state=state_str)
+        if self.undo_btn is not None and not self._history:
+            self.undo_btn.config(state=tk.DISABLED)
+        self._refresh_tables()
+        self._update_metadata_display()
+        self.update_legend()
+        self._rescale()
+
+    # ------------------------------------------------------------------
     def start_analysis(
         self,
         analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm,
@@ -604,6 +685,7 @@ class SpanPeakSelector:
         now preserves ``self.results`` and any existing table entries so that
         users can accumulate measurements across different analyses.
         """
+        self._save_state()
 
         if self.tree is not None and "width" in self.tree["columns"]:
             # The tree keeps previously analysed data; only the analysis label
@@ -683,6 +765,8 @@ class SpanPeakSelector:
         the detected peak positions.  The markers are removed once the user
         decides whether to accept the peaks.
         """
+
+        self._save_state()
 
         # Always operate on the currently selected trace
         self.spectrum = self.spectra[self.current]
@@ -829,6 +913,8 @@ class SpanPeakSelector:
         and dispersive components are determined from all available data.
         """
 
+        self._save_state()
+
         assert self.ax is not None
 
         if self.selected_peak is None:
@@ -936,6 +1022,7 @@ class SpanPeakSelector:
     # ------------------------------------------------------------------
     def compare_spectra(self) -> None:
         """Compare analysis results between two traces and tabulate differences."""
+        self._save_state()
 
         indices = self._prompt_traces()
         if indices is None:
@@ -991,6 +1078,7 @@ class SpanPeakSelector:
     # ------------------------------------------------------------------
     def baseline_correction(self) -> None:
         """Apply a baseline correction to the currently selected trace."""
+        self._save_state()
 
         if self.ax is None:
             return
@@ -1102,6 +1190,19 @@ class SpanPeakSelector:
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
+            try:
+                self.delete_btn = ttk.Button(
+                    self.control_frame,
+                    text="Delete Trace",
+                    command=self.delete_trace,
+                    style="Compact.TButton",
+                )
+            except Exception:
+                self.delete_btn = tk.Button(
+                    self.control_frame, text="Delete Trace", command=self.delete_trace
+                )
+            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+
             self.toggle_frame = tk.Frame(self.control_frame)
             self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
@@ -1119,6 +1220,10 @@ class SpanPeakSelector:
         else:
             if self.trace_combo is not None and self.trace_var is not None:
                 self.trace_combo["values"] = self.labels
+            if self.delete_btn is not None:
+                self.delete_btn.config(
+                    state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED
+                )
             if self.toggle_frame is not None:
                 var = tk.BooleanVar(value=True)
                 idx = len(self.trace_lines) - 1
@@ -1131,12 +1236,16 @@ class SpanPeakSelector:
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
 
+        if self.delete_btn is not None:
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
+
         self.update_legend()
         self._rescale()
 
     # ------------------------------------------------------------------
     def integrate_trace(self) -> None:
         """Integrate the selected derivative trace and plot the absorption spectrum."""
+        self._save_state()
         # Operate on the currently selected spectrum
         self.spectrum = self.spectra[self.current]
         absorption = cumulative_trapezoid(
@@ -1182,6 +1291,19 @@ class SpanPeakSelector:
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
+            try:
+                self.delete_btn = ttk.Button(
+                    self.control_frame,
+                    text="Delete Trace",
+                    command=self.delete_trace,
+                    style="Compact.TButton",
+                )
+            except Exception:
+                self.delete_btn = tk.Button(
+                    self.control_frame, text="Delete Trace", command=self.delete_trace
+                )
+            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+
             self.toggle_frame = tk.Frame(self.control_frame)
             self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
@@ -1199,6 +1321,10 @@ class SpanPeakSelector:
         else:
             if self.trace_combo is not None and self.trace_var is not None:
                 self.trace_combo["values"] = self.labels
+            if self.delete_btn is not None:
+                self.delete_btn.config(
+                    state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED
+                )
             if self.toggle_frame is not None:
                 var = tk.BooleanVar(value=True)
                 idx = len(self.trace_lines) - 1
@@ -1210,6 +1336,9 @@ class SpanPeakSelector:
                 )
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
+
+        if self.delete_btn is not None:
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
 
         self.update_legend()
         self._rescale()
@@ -1372,6 +1501,58 @@ class SpanPeakSelector:
                 self.trace_combo["values"] = self.labels
                 if self.trace_var is not None and index == self.current:
                     self.trace_var.set(text)
+
+    # ------------------------------------------------------------------
+    def delete_trace(self) -> None:
+        """Remove the currently selected trace."""
+
+        if len(self.spectra) <= 1:
+            return
+
+        self._save_state()
+
+        idx = self.current
+        del self.spectra[idx]
+        del self.labels[idx]
+        del self.results_all[idx]
+        del self.lorentz_all[idx]
+        del self.ranges_all[idx]
+        del self.auto_peaks_all[idx]
+        line = self.trace_lines.pop(idx)
+        line.remove()
+        if self.toggle_frame is not None:
+            for child in self.toggle_frame.winfo_children():
+                child.destroy()
+            tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
+            self.trace_vars = []
+            for i, lbl in enumerate(self.labels):
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=lbl,
+                    variable=var,
+                    command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+        if self.current >= len(self.spectra):
+            self.current = len(self.spectra) - 1
+        self.spectrum = self.spectra[self.current]
+        self.results = self.results_all[self.current]
+        self.lorentz_results = self.lorentz_all[self.current]
+        self.ranges = self.ranges_all[self.current]
+        self.auto_peaks = self.auto_peaks_all[self.current]
+        if self.trace_combo is not None and self.trace_var is not None:
+            self.trace_combo["values"] = self.labels
+            self.trace_var.set(self.labels[self.current])
+        if self.delete_btn is not None:
+            self.delete_btn.config(
+                state=tk.NORMAL if len(self.spectra) > 1 else tk.DISABLED
+            )
+        self._refresh_tables()
+        self._update_metadata_display()
+        self.update_legend()
+        self._rescale()
 
     # ------------------------------------------------------------------
     def update_legend(self) -> None:
@@ -1680,6 +1861,14 @@ class SpanPeakSelector:
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
+            self.delete_btn = ButtonCls(
+                control_frame,
+                text="Delete Trace",
+                command=self.delete_trace,
+                **button_kwargs,
+            )
+            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+
             toggle_frame = tk.Frame(control_frame)
             toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(toggle_frame, text="Visible traces").pack(anchor="w")
@@ -1763,6 +1952,18 @@ class SpanPeakSelector:
             **button_kwargs,
         )
         _wrap_buttons(button_row2)
+
+        button_row3 = tk.Frame(control_frame)
+        button_row3.pack(fill=tk.X, padx=5, pady=(2, 5))
+
+        self.undo_btn = ButtonCls(
+            button_row3,
+            text="Undo",
+            command=self.undo,
+            **button_kwargs,
+        )
+        self.undo_btn.config(state=tk.DISABLED)
+        _wrap_buttons(button_row3)
 
         # ------------------------------------------------------------------
         # Peak position table
