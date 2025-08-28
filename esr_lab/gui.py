@@ -1706,16 +1706,44 @@ class SpanPeakSelector:
         messagebox.showinfo("Functions", "\n".join(lines).rstrip())
 
     # ------------------------------------------------------------------
+    def _open_file(self) -> None:
+        """Placeholder callback for the File menu."""
+        try:
+            filedialog.askopenfilename()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    def _view_settings(self) -> None:
+        """Placeholder callback for the View menu."""
+        try:
+            messagebox.showinfo("View", "No view options available.")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     def _create_menu(self) -> None:
-        """Create the menu bar with a Help menu."""
+        """Create the menu bar with File, View and Help menus."""
         if self.root is None:
             return
         try:
             menubar = tk.Menu(self.root)
+            file_menu = tk.Menu(menubar, tearoff=0)
+            file_menu.add_command(label="Open", command=self._open_file)
+            if hasattr(file_menu, "add_separator"):
+                file_menu.add_separator()
+            file_menu.add_command(label="Exit", command=getattr(self.root, "quit", lambda: None))
+
+            view_menu = tk.Menu(menubar, tearoff=0)
+            view_menu.add_command(label="Reset View", command=self._view_settings)
+
             help_menu = tk.Menu(menubar, tearoff=0)
             help_menu.add_command(label="Readme", command=self._show_readme)
             help_menu.add_command(label="Workflow", command=self._show_workflow)
             help_menu.add_command(label="Functions", command=self._show_functions)
+
+            menubar.add_cascade(label="File", menu=file_menu)
+            menubar.add_cascade(label="View", menu=view_menu)
             menubar.add_cascade(label="Help", menu=help_menu)
             self.root.config(menu=menubar)
         except Exception:
@@ -1747,14 +1775,35 @@ class SpanPeakSelector:
         self._create_menu()
 
         ButtonCls: type[tk.Button] | type[ttk.Button] = ttk.Button
-        button_kwargs: dict[str, object] = {"style": "Compact.TButton"}
+        button_kwargs: dict[str, object] = {"style": "Modern.TButton"}
         try:
             style = ttk.Style(self.root)
-            style.configure("Compact.TButton", font=("TkDefaultFont", 9, "bold"), padding=(5, 2))
+            style.theme_use("clam")
+            style.configure(
+                "Modern.TButton",
+                font=("TkDefaultFont", 9, "bold"),
+                relief="raised",
+                borderwidth=3,
+                background="#4a90e2",
+                foreground="white",
+                padding=(5, 2),
+            )
+            style.map(
+                "Modern.TButton",
+                background=[("active", "#357ab7"), ("!disabled", "#4a90e2")],
+                foreground=[("!disabled", "white")],
+            )
             style.configure("Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
         except Exception:
             ButtonCls = tk.Button
-            button_kwargs = {}
+            button_kwargs = {
+                "font": ("TkDefaultFont", 9, "bold"),
+                "relief": tk.RAISED,
+                "bd": 3,
+                "bg": "#4a90e2",
+                "fg": "white",
+                "activebackground": "#357ab7",
+            }
 
         # Keep the analysis panel at roughly a quarter of the window width.  A
         # simple two-column grid layout with weights of 3:1 ensures that the
@@ -1806,7 +1855,7 @@ class SpanPeakSelector:
             _do_wrap()
 
         try:
-            plot_container = tk.Frame(self.root)
+            plot_container = tk.Frame(self.root, bd=2, relief=tk.GROOVE)
             if use_grid and hasattr(plot_container, "grid"):
                 plot_container.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
             else:
@@ -1840,7 +1889,7 @@ class SpanPeakSelector:
                 "<Leave>", lambda _e: plot_canvas.unbind_all("<MouseWheel>")
             )
         except Exception:
-            plot_frame = tk.Frame(self.root)
+            plot_frame = tk.Frame(self.root, bd=2, relief=tk.GROOVE)
             if use_grid and hasattr(plot_frame, "grid"):
                 plot_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
             else:
@@ -1848,7 +1897,7 @@ class SpanPeakSelector:
         self.plot_frame = plot_frame
 
         try:
-            panel_container = tk.Frame(self.root)
+            panel_container = tk.Frame(self.root, bd=2, relief=tk.GROOVE)
             if use_grid and hasattr(panel_container, "grid"):
                 panel_container.grid(row=0, column=1, sticky="nsew")
             else:
@@ -1882,7 +1931,7 @@ class SpanPeakSelector:
                 "<Leave>", lambda _e: panel_canvas.unbind_all("<MouseWheel>")
             )
         except Exception:
-            panel = tk.Frame(self.root)
+            panel = tk.Frame(self.root, bd=2, relief=tk.GROOVE)
             if use_grid and hasattr(panel, "grid"):
                 panel.grid(row=0, column=1, sticky="nsew")
             else:
