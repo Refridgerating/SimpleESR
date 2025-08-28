@@ -660,3 +660,26 @@ def test_help_dialogs(monkeypatch):
     for idx, part in enumerate(expected, start=2):
         assert lines[idx].strip() == part.strip()
 
+
+def test_axes_rescale_on_trace_change_and_toggle():
+    spec1 = ESRSpectrum(field=np.arange(2.0), intensity=np.array([0.0, 1.0]))
+    spec2 = ESRSpectrum(field=np.arange(2.0), intensity=np.array([0.0, 5.0]))
+    selector = gui.SpanPeakSelector([spec1, spec2])
+    fig, selector.ax = plt.subplots()
+    line1, = selector.ax.plot(spec1.field, spec1.intensity)
+    line2, = selector.ax.plot(spec2.field, spec2.intensity)
+    selector.trace_lines = [line1, line2]
+
+    trace_var = MagicMock()
+    trace_var.get.return_value = selector.labels[1]
+    selector.trace_var = trace_var
+
+    selector.ax.set_ylim(-1, 1)
+    selector._on_trace_change()
+    assert selector.ax.get_ylim()[1] > 4.0
+
+    selector._toggle_trace(1, False)
+    assert selector.ax.get_ylim()[1] <= 1.5
+
+    plt.close(fig)
+
