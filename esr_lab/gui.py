@@ -293,6 +293,46 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             )
 
 
+class BaselineOptionsDialog(tk.Toplevel):
+    """Dialog for selecting baseline correction options."""
+
+    def __init__(self, master: tk.Misc) -> None:
+        super().__init__(master)
+        self.title("Baseline Options")
+        self.resizable(False, False)
+
+        self.use_poly = tk.BooleanVar(value=True)
+        self.use_auto = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            self,
+            text="Use polynomial baseline",
+            variable=self.use_poly,
+        ).pack(anchor="w", padx=10, pady=5)
+        tk.Checkbutton(
+            self,
+            text="Automatic point placement",
+            variable=self.use_auto,
+        ).pack(anchor="w", padx=10, pady=5)
+
+        btn = tk.Frame(self)
+        btn.pack(pady=5)
+        tk.Button(btn, text="OK", command=self._on_ok).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn, text="Cancel", command=self._on_cancel).pack(
+            side=tk.LEFT, padx=5
+        )
+
+        self.result: tuple[bool, bool] | None = None
+        self.grab_set()
+
+    def _on_ok(self) -> None:
+        self.result = (self.use_poly.get(), self.use_auto.get())
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+
 class BaselinePointEditor:
     """Interactive helper for selecting and adjusting baseline points.
 
@@ -1076,6 +1116,30 @@ class SpanPeakSelector:
             )
 
     # ------------------------------------------------------------------
+    def _get_baseline_options(self) -> tuple[bool, bool] | None:
+        """Return user-selected baseline options.
+
+        When running within a Tk application a dedicated dialog presents both
+        options at once.  In headless mode the previous messagebox prompts are
+        used as a fallback.
+        """
+
+        if self.root is None:
+            use_poly = messagebox.askyesno(
+                "Baseline Correction",
+                "Use polynomial baseline?\nSelect 'No' for linear baseline.",
+            )
+            use_auto = messagebox.askyesno(
+                "Baseline Points",
+                "Use automatic baseline fit?\nSelect 'No' for manual placement.",
+            )
+            return use_poly, use_auto
+
+        dialog = BaselineOptionsDialog(self.root)
+        dialog.wait_window()
+        return dialog.result
+
+    # ------------------------------------------------------------------
     def baseline_correction(self) -> None:
         """Apply a baseline correction to the currently selected trace."""
         self._save_state()
@@ -1083,14 +1147,10 @@ class SpanPeakSelector:
         if self.ax is None:
             return
 
-        use_poly = messagebox.askyesno(
-            "Baseline Correction",
-            "Use polynomial baseline?\nSelect 'No' for linear baseline.",
-        )
-        use_auto = messagebox.askyesno(
-            "Baseline Points",
-            "Use automatic baseline fit?\nSelect 'No' for manual placement.",
-        )
+        options = self._get_baseline_options()
+        if options is None:
+            return
+        use_poly, use_auto = options
 
         field = self.spectrum.field
         intensity = self.spectrum.intensity
