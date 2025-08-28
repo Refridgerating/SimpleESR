@@ -494,7 +494,8 @@ def test_integrate_trace_plots_absorption():
     fig, selector.ax = plt.subplots()
 
     # Initial derivative trace
-    selector.ax.plot(field, intensity)
+    (line0,) = selector.ax.plot(field, intensity)
+    selector.trace_lines = [line0]
     selector.integrate_trace()
 
     from scipy.integrate import cumulative_trapezoid
@@ -502,9 +503,11 @@ def test_integrate_trace_plots_absorption():
     expected = cumulative_trapezoid(intensity, field, initial=0)
     expected -= np.mean(expected)
 
-    line = selector.ax.lines[-1]
+    line = selector.trace_lines[-1]
     assert np.allclose(line.get_ydata(), expected)
     assert line.get_label() == "Trace 1 (absorption)"
+    assert selector.labels[-1] == "Trace 1 (absorption)"
+    assert len(selector.spectra) == 2
     plt.close(fig)
 
 
@@ -514,6 +517,8 @@ def test_integrate_trace_adds_toggle():
     spec = ESRSpectrum(field=field, intensity=intensity)
     selector = gui.SpanPeakSelector(spec)
     fig, selector.ax = plt.subplots()
+    (line0,) = selector.ax.plot(field, intensity)
+    selector.trace_lines = [line0]
     selector.toggle_frame = MagicMock()
 
     with patch("esr_lab.gui.tk.BooleanVar") as MockVar, patch(
@@ -523,26 +528,27 @@ def test_integrate_trace_adds_toggle():
         MockVar.assert_called_once_with(value=True)
         MockChk.assert_called_once()
         MockChk.return_value.pack.assert_called_once_with(anchor="w")
-        assert selector.abs_vars[0] is MockVar.return_value
+        assert selector.trace_vars[-1] is MockVar.return_value
 
     plt.close(fig)
 
 
-def test_toggle_absorption_line():
+def test_integrated_trace_toggle():
     field = np.linspace(0, 4, 5)
     intensity = np.array([0.0, 1.0, 0.0, -1.0, 0.0])
     spec = ESRSpectrum(field=field, intensity=intensity)
     selector = gui.SpanPeakSelector(spec)
     fig, selector.ax = plt.subplots()
-    selector.ax.plot(field, intensity)
+    (line0,) = selector.ax.plot(field, intensity)
+    selector.trace_lines = [line0]
     selector.integrate_trace()
-    line = selector.abs_lines[0]
+    line = selector.trace_lines[1]
     selector.update_legend = MagicMock()
     selector.ax.figure.canvas.draw_idle = MagicMock()
-    selector._toggle_absorption(0, False)
+    selector._toggle_trace(1, False)
     assert not line.get_visible()
     selector.update_legend.assert_called_once()
-    selector.ax.figure.canvas.draw_idle.assert_called_once()
+    assert selector.ax.figure.canvas.draw_idle.call_count == 2
     plt.close(fig)
 
 

@@ -454,11 +454,6 @@ class SpanPeakSelector:
         ]
         self.auto_peaks = self.auto_peaks_all[self.current]
 
-        # Line objects of integrated absorption spectra per trace
-        self.abs_lines: list[Line2D | None] = [None for _ in self.spectra]
-        # Variables for toggling absorption traces in the picker panel
-        self.abs_vars: list[tk.BooleanVar | None] = [None for _ in self.spectra]
-
         # Plot lines and visibility state for each spectrum
         self.trace_lines: list[Line2D] = []
         self.trace_vars: list[tk.BooleanVar] = []
@@ -1091,8 +1086,6 @@ class SpanPeakSelector:
         self.lorentz_all.append([])
         self.ranges_all.append([])
         self.auto_peaks_all.append([])
-        self.abs_lines.append(None)
-        self.abs_vars.append(None)
 
         if (
             self.trace_combo is None
@@ -1144,7 +1137,6 @@ class SpanPeakSelector:
     # ------------------------------------------------------------------
     def integrate_trace(self) -> None:
         """Integrate the selected derivative trace and plot the absorption spectrum."""
-
         # Operate on the currently selected spectrum
         self.spectrum = self.spectra[self.current]
         absorption = cumulative_trapezoid(
@@ -1155,20 +1147,41 @@ class SpanPeakSelector:
         if self.ax is None:
             return
 
-        # Remove an existing absorption line for this trace
-        existing = self.abs_lines[self.current]
-        if existing is not None:
-            existing.remove()
-
+        label = f"{self.labels[self.current]} (absorption)"
         (line,) = self.ax.plot(
             self.spectrum.field,
             absorption,
-            label=f"{self.labels[self.current]} (absorption)",
+            label=label,
         )
-        self.abs_lines[self.current] = line
+        self.trace_lines.append(line)
+        self.spectra.append(
+            ESRSpectrum(
+                field=self.spectrum.field.copy(),
+                intensity=absorption.copy(),
+                metadata=self.spectrum.metadata,
+            )
+        )
+        self.labels.append(label)
+        self.results_all.append([])
+        self.lorentz_all.append([])
+        self.ranges_all.append([])
+        self.auto_peaks_all.append([])
 
-        # Ensure the absorption trace can be toggled in the picker panel
-        if self.toggle_frame is None and self.control_frame is not None and self.root is not None:
+        if (
+            self.trace_combo is None
+            and self.control_frame is not None
+            and self.root is not None
+        ):
+            self.trace_var = tk.StringVar(value=self.labels[0])
+            self.trace_combo = ttk.Combobox(
+                self.control_frame,
+                textvariable=self.trace_var,
+                values=self.labels,
+                state="readonly",
+            )
+            self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
             self.toggle_frame = tk.Frame(self.control_frame)
             self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
@@ -1183,21 +1196,20 @@ class SpanPeakSelector:
                 )
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
-
-        if self.toggle_frame is not None:
-            var = self.abs_vars[self.current]
-            if var is None:
+        else:
+            if self.trace_combo is not None and self.trace_var is not None:
+                self.trace_combo["values"] = self.labels
+            if self.toggle_frame is not None:
                 var = tk.BooleanVar(value=True)
+                idx = len(self.trace_lines) - 1
                 chk = tk.Checkbutton(
                     self.toggle_frame,
-                    text=f"{self.labels[self.current]} (absorption)",
+                    text=label,
                     variable=var,
-                    command=lambda idx=self.current, v=var: self._toggle_absorption(idx, v.get()),
+                    command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
                 )
                 chk.pack(anchor="w")
-                self.abs_vars[self.current] = var
-            else:
-                var.set(True)
+                self.trace_vars.append(var)
 
         self.update_legend()
         self._rescale()
@@ -1349,19 +1361,6 @@ class SpanPeakSelector:
 
         self.update_legend()
         self._rescale()
-
-    def _toggle_absorption(self, index: int, show: bool) -> None:
-        """Show or hide the integrated absorption trace for the given index."""
-
-        if not (0 <= index < len(self.abs_lines)):
-            return
-
-        line = self.abs_lines[index]
-        if line is None:
-            return
-
-        line.set_visible(show)
-        self.update_legend()
         self._rescale()
 
     def _set_label(self, index: int, text: str) -> None:
@@ -1381,7 +1380,7 @@ class SpanPeakSelector:
         if self.ax is None:
             return
 
-        if len(self.trace_lines) <= 1 and not any(l is not None for l in self.abs_lines):
+        if len(self.trace_lines) <= 1:
             return
 
         handles: list[Line2D] = []
@@ -1391,11 +1390,6 @@ class SpanPeakSelector:
             if line.get_visible():
                 handles.append(line)
                 labels.append(label)
-
-        for line in self.abs_lines:
-            if line is not None and line.get_visible():
-                handles.append(line)
-                labels.append(line.get_label())
 
         if handles:
             leg = self.ax.legend(handles, labels)
