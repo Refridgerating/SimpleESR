@@ -1138,8 +1138,8 @@ class SpanPeakSelector:
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
 
-        self.ax.legend()
-        self.ax.figure.canvas.draw_idle()
+        self.update_legend()
+        self._rescale()
 
     # ------------------------------------------------------------------
     def integrate_trace(self) -> None:
@@ -1200,7 +1200,7 @@ class SpanPeakSelector:
                 var.set(True)
 
         self.update_legend()
-        self.ax.figure.canvas.draw_idle()
+        self._rescale()
 
     # ------------------------------------------------------------------
     def save_results(self, path: Path) -> None:
@@ -1301,6 +1301,14 @@ class SpanPeakSelector:
         if self.meta_label is not None:
             self.meta_label.config(text=text)
 
+    def _rescale(self) -> None:
+        """Rescale axes to ensure all visible traces are fully shown."""
+        if self.ax is None:
+            return
+        self.ax.relim(visible_only=True)
+        self.ax.autoscale()
+        self.ax.figure.canvas.draw_idle()
+
     def _on_trace_change(self, _event: object | None = None) -> None:
         """Update state when the user selects a different trace."""
 
@@ -1328,6 +1336,7 @@ class SpanPeakSelector:
 
         self._refresh_tables()
         self._update_metadata_display()
+        self._rescale()
 
     # ------------------------------------------------------------------
     def _toggle_trace(self, index: int, show: bool) -> None:
@@ -1339,8 +1348,7 @@ class SpanPeakSelector:
         self.trace_lines[index].set_visible(show)
 
         self.update_legend()
-        if self.ax is not None:
-            self.ax.figure.canvas.draw_idle()
+        self._rescale()
 
     def _toggle_absorption(self, index: int, show: bool) -> None:
         """Show or hide the integrated absorption trace for the given index."""
@@ -1354,8 +1362,7 @@ class SpanPeakSelector:
 
         line.set_visible(show)
         self.update_legend()
-        if self.ax is not None:
-            self.ax.figure.canvas.draw_idle()
+        self._rescale()
 
     def _set_label(self, index: int, text: str) -> None:
         """Update the stored label for a trace."""
