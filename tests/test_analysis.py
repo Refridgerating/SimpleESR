@@ -82,6 +82,17 @@ def test_peak_finder_pairs():
     assert pairs == [(5, 7), (11, 13)]
 
 
+def test_peak_finder_curvature_on_absorption():
+    field = np.linspace(-5, 5, 10001)
+    intensity = np.exp(-field**2)
+    pairs = peak_finder(field, intensity, expected=2, method="curvature")
+    assert len(pairs) == 1
+    pos, neg = pairs[0]
+    # For a Gaussian the derivative extrema occur near ±1/sqrt(2)
+    assert np.isclose(field[pos], -1 / np.sqrt(2), atol=0.1)
+    assert np.isclose(field[neg], 1 / np.sqrt(2), atol=0.1)
+
+
 def test_baseline_correct_manual_and_auto():
     field = np.linspace(0, 10, 11)
     baseline = 0.5 * field + 1.0

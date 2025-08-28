@@ -125,13 +125,20 @@ def peak_finder(
     intensity: np.ndarray,
     expected: int = 4,
     width: float = 15.0,
+    method: str = "zero",
 ) -> list[tuple[int, int]]:
     """Automatically locate peak pairs in the provided data.
 
-    This implementation relies on the derivative spectrum crossing zero between
-    the positive and negative extrema of an absorption peak.  Around each zero
-    crossing, local extrema are searched within a window of ``±width`` and
-    paired up to yield the peak positions.
+    Two approaches are supported:
+
+    ``method="zero"`` (default)
+        Operates on derivative-mode data by locating zero crossings and
+        searching for extrema in a window of ``±width`` around each crossing.
+
+    ``method="curvature"``
+        Intended for absorption spectra.  It evaluates the curvature of the
+        trace via the first derivative and pairs up maxima and minima of this
+        derivative.  The ``width`` parameter is ignored in this mode.
 
     Parameters
     ----------
@@ -146,7 +153,12 @@ def peak_finder(
     width:
         Half width in magnetic-field units used around each zero crossing to
         determine the local maxima and minima.  The default of ``15.0`` mT
-        mirrors the manual analysis range used in the GUI.
+        mirrors the manual analysis range used in the GUI.  Ignored when
+        ``method="curvature"``.
+    method:
+        ``"zero"`` to base the detection on zero crossings of the provided
+        trace (appropriate for derivative spectra) or ``"curvature"`` to analyse
+        the curvature of an absorption trace.
 
     Returns
     -------
@@ -164,47 +176,85 @@ def peak_finder(
     if expected < 2 or expected % 2 != 0:
         raise ValueError("Expected number of peaks must be an even integer >= 2")
 
-    # Identify zero crossings where the signal changes from positive to
-    # negative.  Zeros are ignored by using ``nan`` and compressing the array to
-    # regions of constant sign.
-    sign = np.sign(intensity)
-    sign = np.where(sign == 0, np.nan, sign)
-    nonzero_idx = np.where(~np.isnan(sign))[0]
-    if nonzero_idx.size == 0:
-        raise ValueError("No non-zero data points found")
-    nonzero_sign = sign[nonzero_idx]
-    changes = np.where((nonzero_sign[:-1] > 0) & (nonzero_sign[1:] < 0))[0]
-    zero_crossings = (nonzero_idx[changes] + nonzero_idx[changes + 1]) // 2
+    method = method.lower()
+    if method not in {"zero", "curvature"}:
+        raise ValueError("method must be 'zero' or 'curvature'")
+
+    if method == "zero":
+        # Identify zero crossings where the signal changes from positive to
+        # negative.  Zeros are ignored by using ``nan`` and compressing the array
+        # to regions of constant sign.
+        sign = np.sign(intensity)
+        sign = np.where(sign == 0, np.nan, sign)
+        nonzero_idx = np.where(~np.isnan(sign))[0]
+        if nonzero_idx.size == 0:
+            raise ValueError("No non-zero data points found")
+        nonzero_sign = sign[nonzero_idx]
+        changes = np.where((nonzero_sign[:-1] > 0) & (nonzero_sign[1:] < 0))[0]
+        zero_crossings = (nonzero_idx[changes] + nonzero_idx[changes + 1]) // 2
+
+        pairs: list[tuple[int, int]] = []
+        for i, zc in enumerate(zero_crossings):
+            center = field[zc]
+            left_bound = center - width
+            right_bound = center + width
+            if i > 0:
+                left_bound = max(left_bound, field[zero_crossings[i - 1]])
+            if i < len(zero_crossings) - 1:
+                right_bound = min(right_bound, field[zero_crossings[i + 1]])
+
+            left_mask = (field >= left_bound) & (field <= center)
+            right_mask = (field >= center) & (field <= right_bound)
+            left_idx = np.where(left_mask)[0]
+            right_idx = np.where(right_mask)[0]
+            if left_idx.size == 0 or right_idx.size == 0:
+                continue
+
+            pos_idx = left_idx[np.argmax(intensity[left_idx])]
+            neg_idx = right_idx[np.argmin(intensity[right_idx])]
+            pairs.append((int(pos_idx), int(neg_idx)))
+
+        n_pairs = expected // 2
+        if len(pairs) < n_pairs:
+            raise ValueError("Not enough peaks found in the data")
+
+        # Rank pairs by their peak-to-peak amplitude and select the most
+        # prominent
+        pairs = sorted(
+            pairs,
+            key=lambda p: abs(intensity[p[0]] - intensity[p[1]]),
+            reverse=True,
+        )[:n_pairs]
+
+        pairs.sort(key=lambda p: field[p[0]])
+        return pairs
+
+    # Curvature-based peak finder for absorption traces
+    deriv = np.gradient(intensity, field)
+    pos_peaks, _ = find_peaks(deriv)
+    neg_peaks, _ = find_peaks(-deriv)
+    if pos_peaks.size == 0 or neg_peaks.size == 0:
+        raise ValueError("Both positive and negative peaks are required in the data")
+
+    labeled = [*( (int(i), "pos") for i in pos_peaks ), *( (int(i), "neg") for i in neg_peaks )]
+    labeled.sort(key=lambda t: field[t[0]])
 
     pairs: list[tuple[int, int]] = []
-    for i, zc in enumerate(zero_crossings):
-        center = field[zc]
-        left_bound = center - width
-        right_bound = center + width
-        if i > 0:
-            left_bound = max(left_bound, field[zero_crossings[i - 1]])
-        if i < len(zero_crossings) - 1:
-            right_bound = min(right_bound, field[zero_crossings[i + 1]])
-
-        left_mask = (field >= left_bound) & (field <= center)
-        right_mask = (field >= center) & (field <= right_bound)
-        left_idx = np.where(left_mask)[0]
-        right_idx = np.where(right_mask)[0]
-        if left_idx.size == 0 or right_idx.size == 0:
-            continue
-
-        pos_idx = left_idx[np.argmax(intensity[left_idx])]
-        neg_idx = right_idx[np.argmin(intensity[right_idx])]
-        pairs.append((int(pos_idx), int(neg_idx)))
+    current_pos: int | None = None
+    for idx, kind in labeled:
+        if kind == "pos":
+            current_pos = idx
+        elif kind == "neg" and current_pos is not None:
+            pairs.append((current_pos, idx))
+            current_pos = None
 
     n_pairs = expected // 2
     if len(pairs) < n_pairs:
         raise ValueError("Not enough peaks found in the data")
 
-    # Rank pairs by their peak-to-peak amplitude and select the most prominent
     pairs = sorted(
         pairs,
-        key=lambda p: abs(intensity[p[0]] - intensity[p[1]]),
+        key=lambda p: abs(deriv[p[0]] - deriv[p[1]]),
         reverse=True,
     )[:n_pairs]
 
