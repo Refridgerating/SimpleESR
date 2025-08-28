@@ -232,6 +232,65 @@ def test_baseline_correction_manual():
     plt.close(fig)
 
 
+def test_baseline_correction_auto_confirm():
+    spectrum = ESRSpectrum(
+        field=np.array([0.0, 1.0, 2.0]), intensity=np.array([1.0, 2.0, 3.0])
+    )
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+    (line,) = selector.ax.plot(spectrum.field, spectrum.intensity)
+    selector.trace_lines = [line]
+    selector.ax.figure.canvas.draw_idle = MagicMock()
+
+    corrected = np.zeros(3)
+    baseline = np.ones(3)
+    with patch(
+        "esr_lab.gui.SpanPeakSelector._get_baseline_options",
+        return_value=(True, True),
+    ), patch(
+        "esr_lab.gui.baseline_correct", return_value=(corrected, baseline)
+    ) as bc, patch(
+        "esr_lab.gui.messagebox.askyesno", return_value=True
+    ) as ask:
+        selector.baseline_correction()
+        bc.assert_called_once()
+        ask.assert_called_once()
+        assert len(selector.spectra) == 2
+        assert np.allclose(selector.spectra[-1].intensity, corrected)
+        assert len(selector.ax.lines) == 2
+
+    plt.close(fig)
+
+
+def test_baseline_correction_auto_cancel():
+    spectrum = ESRSpectrum(
+        field=np.array([0.0, 1.0, 2.0]), intensity=np.array([1.0, 2.0, 3.0])
+    )
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+    (line,) = selector.ax.plot(spectrum.field, spectrum.intensity)
+    selector.trace_lines = [line]
+    selector.ax.figure.canvas.draw_idle = MagicMock()
+
+    corrected = np.zeros(3)
+    baseline = np.ones(3)
+    with patch(
+        "esr_lab.gui.SpanPeakSelector._get_baseline_options",
+        return_value=(False, True),
+    ), patch(
+        "esr_lab.gui.baseline_correct", return_value=(corrected, baseline)
+    ) as bc, patch(
+        "esr_lab.gui.messagebox.askyesno", return_value=False
+    ) as ask:
+        selector.baseline_correction()
+        bc.assert_called_once()
+        ask.assert_called_once()
+        assert len(selector.spectra) == 1
+        assert len(selector.ax.lines) == 1
+
+    plt.close(fig)
+
+
 def test_baseline_editor_clear():
     field = np.linspace(0.0, 2.0, 3)
     intensity = np.zeros(3)

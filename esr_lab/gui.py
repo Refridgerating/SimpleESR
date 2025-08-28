@@ -301,13 +301,24 @@ class BaselineOptionsDialog(tk.Toplevel):
         self.title("Baseline Options")
         self.resizable(False, False)
 
-        self.use_poly = tk.BooleanVar(value=True)
+        self.fit_type = tk.IntVar(value=1)
         self.use_auto = tk.BooleanVar(value=True)
-        tk.Checkbutton(
+
+        tk.Label(self, text="Baseline fit type:").pack(
+            anchor="w", padx=10, pady=(5, 0)
+        )
+        tk.Radiobutton(
             self,
-            text="Use polynomial baseline",
-            variable=self.use_poly,
-        ).pack(anchor="w", padx=10, pady=5)
+            text="Polynomial fit",
+            variable=self.fit_type,
+            value=1,
+        ).pack(anchor="w", padx=20)
+        tk.Radiobutton(
+            self,
+            text="Linear fit",
+            variable=self.fit_type,
+            value=0,
+        ).pack(anchor="w", padx=20, pady=(0, 5))
         tk.Checkbutton(
             self,
             text="Automatic point placement",
@@ -325,7 +336,7 @@ class BaselineOptionsDialog(tk.Toplevel):
         self.grab_set()
 
     def _on_ok(self) -> None:
-        self.result = (self.use_poly.get(), self.use_auto.get())
+        self.result = (bool(self.fit_type.get()), self.use_auto.get())
         self.destroy()
 
     def _on_cancel(self) -> None:
@@ -1164,6 +1175,17 @@ class SpanPeakSelector:
             corrected, _baseline = baseline_correct(
                 field, intensity, points=pts, degree=degree
             )
+            (preview_line,) = self.ax.plot(
+                field, _baseline, "k--", linewidth=1
+            )
+            self.ax.figure.canvas.draw_idle()
+            confirm = messagebox.askyesno(
+                "Baseline Correction", "Use this automatically generated fit?"
+            )
+            preview_line.remove()
+            self.ax.figure.canvas.draw_idle()
+            if not confirm:
+                return
         else:
             pts: list[tuple[float, float]] = []
             if self.root is None:
