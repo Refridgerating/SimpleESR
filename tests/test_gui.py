@@ -81,6 +81,27 @@ def test_peak_to_peak_analysis():
     plt.close(fig)
 
 
+def test_fwhm_differs_from_peak_to_peak():
+    field = np.linspace(-5, 5, 10001)
+    intensity = field * np.exp(-field**2 / 2)
+    spec = ESRSpectrum(field=field, intensity=intensity)
+    selector = gui.SpanPeakSelector(spec)
+
+    with patch("esr_lab.gui.messagebox.showinfo"):
+        selector.onselect(-2.0, 2.0)
+    fwhm = selector.results[0]["width"]
+
+    selector.results.clear()
+    selector.analysis_func = gui.calc_peak_to_peak
+    selector.analysis_label = "\u0394H_pp"
+    with patch("esr_lab.gui.messagebox.showinfo"):
+        selector.onselect(-2.0, 2.0)
+    dhpp = selector.results[0]["width"]
+
+    assert not np.isclose(fwhm, dhpp)
+    assert np.isclose(fwhm, np.sqrt(3.0) * dhpp, atol=1e-3)
+
+
 def test_peak_finder_marks_peaks():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.array([0, 1, 0, -1, 0]))
     selector = gui.SpanPeakSelector(spectrum)

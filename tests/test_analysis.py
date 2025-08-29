@@ -28,8 +28,8 @@ def test_calc_fwhm_from_peaks():
 
     pos_idx, neg_idx = find_peak(field, intensity, -2, 2)
     width = calc_fwhm(field, intensity, pos_idx, neg_idx)
-
-    assert np.isclose(width, 2.0, atol=1e-3)
+    expected = 2.0 * np.sqrt(3.0)
+    assert np.isclose(width, expected, atol=1e-3)
 
 
 def test_calc_peak_to_peak_from_peaks():
@@ -40,6 +40,18 @@ def test_calc_peak_to_peak_from_peaks():
     width = calc_peak_to_peak(field, intensity, pos_idx, neg_idx)
 
     assert np.isclose(width, 2.0, atol=1e-3)
+
+
+def test_fwhm_relates_to_peak_to_peak():
+    field = np.linspace(-5, 5, 10001)
+    intensity = field * np.exp(-field**2 / 2)
+
+    pos_idx, neg_idx = find_peak(field, intensity, -2, 2)
+    fwhm = calc_fwhm(field, intensity, pos_idx, neg_idx)
+    dhpp = calc_peak_to_peak(field, intensity, pos_idx, neg_idx)
+
+    assert not np.isclose(fwhm, dhpp)
+    assert np.isclose(fwhm, np.sqrt(3.0) * dhpp, atol=1e-3)
 
 
 def test_fit_lorentzian_derivative_parameters():

@@ -66,9 +66,12 @@ def calc_fwhm(
     """Estimate the full width at half maximum from a peak pair.
 
     In derivative-mode ESR the distance between the positive and negative
-    extrema of an absorption line is proportional to its FWHM.  Once both peak
-    indices are known, the width can therefore be approximated simply as the
-    absolute difference of their field values.
+    extrema of an absorption line is not the FWHM itself.  For a Lorentzian
+    line shape the conversion factor between the peak-to-peak distance
+    :math:`\Delta H_{pp}` and the true FWHM is :math:`\sqrt{3}`.  The width is
+    therefore obtained by multiplying the separation of the extrema by this
+    factor.  The ``intensity`` array is currently unused but retained for API
+    compatibility.
 
     Parameters
     ----------
@@ -84,10 +87,11 @@ def calc_fwhm(
     Returns
     -------
     float
-        The absolute distance between the positive and negative peak positions.
+        The estimated FWHM assuming a Lorentzian line shape.
     """
 
-    return float(abs(field[pos_idx] - field[neg_idx]))
+    delta_h_pp = abs(field[pos_idx] - field[neg_idx])
+    return float(np.sqrt(3.0) * delta_h_pp)
 
 
 def calc_peak_to_peak(
@@ -429,8 +433,8 @@ FUNCTION_DETAILS: dict[str, tuple[str, sp.Expr | None]] = {
         None,
     ),
     "calc_fwhm": (
-        "Estimate the full width at half maximum (FWHM)",
-        sp.Eq(FWHM, sp.Abs(H_plus - H_minus)),
+        "Estimate the full width at half maximum (FWHM) assuming a Lorentzian line",
+        sp.Eq(FWHM, sp.sqrt(3) * sp.Abs(H_plus - H_minus)),
     ),
     "calc_peak_to_peak": (
         "Compute the peak-to-peak separation ΔH_pp",
