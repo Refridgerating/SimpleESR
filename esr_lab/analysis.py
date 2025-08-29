@@ -195,22 +195,30 @@ def peak_finder(
         raise ValueError("method must be 'zero', 'curvature', or 'auto'")
 
     zero_crossings: np.ndarray | None = None
+    flip = False
     if method in {"zero", "auto"}:
         # Identify zero crossings where the signal changes from positive to
         # negative.  Zeros are ignored by using ``nan`` and compressing the array
         # to regions of constant sign.
-        sign = np.sign(intensity)
+        work_intensity = intensity.copy()
+        sign = np.sign(work_intensity)
         sign = np.where(sign == 0, np.nan, sign)
         nonzero_idx = np.where(~np.isnan(sign))[0]
         if nonzero_idx.size == 0:
             raise ValueError("No non-zero data points found")
         nonzero_sign = sign[nonzero_idx]
+        if nonzero_sign[0] < 0:
+            flip = True
+            work_intensity = -work_intensity
+            sign = -sign
+            nonzero_sign = -nonzero_sign
         changes = np.where((nonzero_sign[:-1] > 0) & (nonzero_sign[1:] < 0))[0]
         zero_crossings = (nonzero_idx[changes] + nonzero_idx[changes + 1]) // 2
         if zero_crossings.size == 0:
             method = "curvature"
         elif method == "auto":
             method = "zero"
+        intensity = work_intensity
 
     if method == "zero" and zero_crossings is not None:
         pairs: list[tuple[int, int]] = []
@@ -232,7 +240,10 @@ def peak_finder(
 
             pos_idx = left_idx[np.argmax(intensity[left_idx])]
             neg_idx = right_idx[np.argmin(intensity[right_idx])]
-            pairs.append((int(pos_idx), int(neg_idx)))
+            if flip:
+                pairs.append((int(neg_idx), int(pos_idx)))
+            else:
+                pairs.append((int(pos_idx), int(neg_idx)))
 
         n_pairs = expected // 2
         if len(pairs) < n_pairs:
