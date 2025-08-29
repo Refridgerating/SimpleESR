@@ -58,13 +58,12 @@ def test_peak_to_peak_analysis():
     selector = gui.SpanPeakSelector(spectrum)
 
     fig, selector.ax = plt.subplots()
-    with patch("esr_lab.gui.find_peak", return_value=(1, 3)) as fp, \
+    with patch("esr_lab.gui.SpanPeakSelector._detect_peaks", return_value=[(1, 3)]) as dp, \
         patch("esr_lab.gui.calc_peak_to_peak", return_value=2.0) as cpp, \
-        patch("esr_lab.gui.messagebox.showinfo") as info, \
-        patch("esr_lab.gui.simpledialog.askinteger", return_value=1):
+        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+        patch("esr_lab.gui.messagebox.showinfo") as info:
         selector.start_peak_to_peak()
-        selector.onselect(0.0, 4.0)
-        fp.assert_called_once()
+        dp.assert_called_once()
         cpp.assert_called_once()
         info.assert_called_once()
         assert selector.results == [
@@ -153,7 +152,6 @@ def test_peak_finder_marks_peaks():
     selector.ax.plot = MagicMock(side_effect=fake_plot)
 
     with patch("esr_lab.gui.auto_peak_finder", return_value=[(1, 3)]), \
-        patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
         patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
         patch("esr_lab.gui.messagebox.showinfo"):
         selector.peak_finder()
@@ -172,7 +170,6 @@ def test_peak_finder_tabulates_positions():
     tree.get_children.return_value = []
     selector.peak_tree = tree
     with patch("esr_lab.gui.auto_peak_finder", return_value=[(1, 3)]), \
-        patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
         patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
         patch("esr_lab.gui.messagebox.showinfo"):
         selector.peak_finder()
@@ -196,7 +193,6 @@ def test_peak_finder_uses_auto_method():
         return [(1, 3)]
 
     with patch("esr_lab.gui.auto_peak_finder", new=fake_peak_finder), \
-        patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
         patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
         patch("esr_lab.gui.messagebox.showinfo"):
         selector.peak_finder()
@@ -209,16 +205,14 @@ def test_results_persist_across_analyses():
     selector = gui.SpanPeakSelector(spectrum)
     fig, selector.ax = plt.subplots()
 
-    with patch("esr_lab.gui.find_peak", return_value=(1, 3)) as fp, \
+    with patch("esr_lab.gui.SpanPeakSelector._detect_peaks", return_value=[(1, 3)]) as dp, \
         patch("esr_lab.gui.calc_fwhm", return_value=0.5) as cf, \
         patch("esr_lab.gui.calc_peak_to_peak", return_value=2.0) as cpp, \
-        patch("esr_lab.gui.messagebox.showinfo"), \
-        patch("esr_lab.gui.simpledialog.askinteger", return_value=1):
+        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+        patch("esr_lab.gui.messagebox.showinfo"):
         selector.start_analysis(analysis_func=cf)
-        selector.onselect(1.0, 2.0)
         selector.start_peak_to_peak()
-        selector.onselect(0.0, 4.0)
-        assert fp.call_count == 2
+        assert dp.call_count == 2
         cf.assert_called_once()
         cpp.assert_called_once()
         assert selector.results == [
@@ -259,18 +253,16 @@ def test_multi_trace_results_isolated():
 
     selector.peak_slider = MagicMock()
 
-    with patch("esr_lab.gui.find_peak", return_value=(1, 3)), \
+    with patch("esr_lab.gui.SpanPeakSelector._detect_peaks", return_value=[(1, 3)]), \
         patch("esr_lab.gui.calc_fwhm", return_value=0.5), \
-        patch("esr_lab.gui.messagebox.showinfo"), \
-        patch("esr_lab.gui.simpledialog.askinteger", return_value=1):
+        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+        patch("esr_lab.gui.messagebox.showinfo"):
         selector.start_analysis()
-        selector.onselect(1.0, 2.0)
 
         # switch to second trace
         selector.trace_var = MagicMock(get=lambda: "two")
         selector._on_trace_change()
         selector.start_analysis()
-        selector.onselect(1.0, 2.0)
 
     assert len(selector.results_all[0]) == 1
     assert len(selector.results_all[1]) == 1

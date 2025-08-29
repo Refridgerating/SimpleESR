@@ -24,6 +24,7 @@ from scipy.integrate import cumulative_trapezoid
 import sympy as sp
 import copy
 
+from scipy.signal import find_peaks
 from .analysis import (
     calc_fwhm,
     find_peak,
@@ -751,15 +752,60 @@ class SpanPeakSelector:
             # heading can remain unchanged.
             pass
 
-        peak_choice = self._prompt_peak()
-        if peak_choice is None:
+        # Always operate on the currently selected trace
+        self.spectrum = self.spectra[self.current]
+        self.auto_peaks = self.auto_peaks_all[self.current]
+
+        try:
+            pairs = self._detect_peaks()
+        except ValueError as exc:
+            messagebox.showerror("Peak Finder", str(exc))
             return
-        self.current_peak = int(peak_choice)
+
+        markers: list[Line2D] = []
+        if self.ax is not None:
+            for p, n in pairs:
+                (pos_marker,) = self.ax.plot(
+                    self.spectrum.field[p],
+                    self.spectrum.intensity[p],
+                    marker="o",
+                    color="red",
+                )
+                (neg_marker,) = self.ax.plot(
+                    self.spectrum.field[n],
+                    self.spectrum.intensity[n],
+                    marker="o",
+                    color="blue",
+                )
+                markers.extend([pos_marker, neg_marker])
+            self.ax.figure.canvas.draw_idle()
+
+        lines = [
+            (
+                f"Peak {i + 1}: pos={self.spectrum.field[p]:.3f}, "
+                f"neg={self.spectrum.field[n]:.3f}"
+            )
+            for i, (p, n) in enumerate(pairs)
+        ]
+        accept = messagebox.askyesno(
+            "Peak Finder", "\n".join(lines) + "\nProceed with analysis?"
+        )
+
+        for m in markers:
+            m.remove()
+        if self.ax is not None:
+            self.ax.figure.canvas.draw_idle()
+
+        if not accept:
+            return
+
         self.analysis_func = analysis_func
         self.analysis_label = label
 
-        if len(self.auto_peaks) >= self.current_peak:
-            pos_idx, neg_idx = self.auto_peaks[self.current_peak - 1]
+        self.auto_peaks.clear()
+        self.auto_peaks.extend(pairs)
+
+        for i, (pos_idx, neg_idx) in enumerate(pairs, start=1):
             width = self.analysis_func(
                 self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
             )
@@ -771,7 +817,7 @@ class SpanPeakSelector:
             self.ranges.append((start, end))
             result = {
                 "analysis": self.analysis_label,
-                "peak": int(self.current_peak),
+                "peak": int(i),
                 "pos_x": float(pos_field),
                 "pos_y": float(pos_y),
                 "neg_x": float(neg_field),
@@ -785,7 +831,7 @@ class SpanPeakSelector:
                     tk.END,
                     values=(
                         self.analysis_label,
-                        f"{self.current_peak}",
+                        f"{i}",
                         f"{pos_field:.3f}",
                         f"{pos_y:.3f}",
                         f"{neg_field:.3f}",
@@ -793,29 +839,48 @@ class SpanPeakSelector:
                         f"{width:.3f}",
                     ),
                 )
-            messagebox.showinfo(
-                "Peak analysis",
-                f"Peak {self.current_peak}: pos={pos_field:.3f}, neg={neg_field:.3f}, {self.analysis_label}={width:.3f}",
-            )
-            return
 
-        if self.selector is not None:
-            self.selector.disconnect_events()
-        assert self.ax is not None
-        self.selector = SpanSelector(
-            self.ax, self.onselect, "horizontal", useblit=True
+        messagebox.showinfo(
+            "Peak analysis", f"Analysed {len(pairs)} peaks"
         )
-        if self.analyse_btn is not None:
-            self.analyse_btn.config(state=tk.DISABLED)
-        if self.dhpp_btn is not None:
-            self.dhpp_btn.config(state=tk.DISABLED)
-        if self.find_btn is not None:
-            self.find_btn.config(state=tk.DISABLED)
+        self._refresh_tables()
 
     def start_peak_to_peak(self) -> None:
         """Start interactive \u0394H_pp analysis using span selection."""
 
         self.start_analysis(calc_peak_to_peak, "\u0394H_pp")
+
+    def _detect_peaks(self) -> list[tuple[int, int]]:
+        """Identify peak pairs in the current spectrum.
+
+        The number of peaks is determined automatically using
+        :func:`scipy.signal.find_peaks` on the positive and negative traces.
+        The smaller count of the two is used to set the expected number of
+        extrema for :func:`~esr_lab.analysis.peak_finder`.
+
+        Returns
+        -------
+        list[tuple[int, int]]
+            A list of ``(positive_idx, negative_idx)`` tuples ordered by field.
+
+        Raises
+        ------
+        ValueError
+            If no peaks are detected.
+        """
+
+        pos_peaks, _ = find_peaks(self.spectrum.intensity)
+        neg_peaks, _ = find_peaks(-self.spectrum.intensity)
+        num_pairs = min(len(pos_peaks), len(neg_peaks))
+        if num_pairs == 0:
+            raise ValueError("No peaks detected")
+        expected = num_pairs * 2
+        return auto_peak_finder(
+            self.spectrum.field,
+            self.spectrum.intensity,
+            expected=expected,
+            method="auto",
+        )
 
     def peak_finder(self) -> None:
         """Automatically detect peak pairs and store them for analysis.
@@ -832,20 +897,7 @@ class SpanPeakSelector:
         self.auto_peaks = self.auto_peaks_all[self.current]
 
         try:
-            num = simpledialog.askinteger(
-                "Peak Finder", "How many peaks to expect?", initialvalue=4, minvalue=2
-            )
-        except Exception:
-            num = 4
-        if num is None:
-            return
-        try:
-            pairs = auto_peak_finder(
-                self.spectrum.field,
-                self.spectrum.intensity,
-                expected=int(num),
-                method="auto",
-            )
+            pairs = self._detect_peaks()
         except ValueError as exc:
             messagebox.showerror("Peak Finder", str(exc))
             return
