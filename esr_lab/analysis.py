@@ -63,7 +63,7 @@ def find_peak(
 def calc_fwhm(
     field: np.ndarray, intensity: np.ndarray, pos_idx: int, neg_idx: int
 ) -> float:
-    """Estimate the full width at half maximum from a peak pair.
+    r"""Estimate the full width at half maximum from a peak pair.
 
     In derivative-mode ESR the distance between the positive and negative
     extrema of an absorption line is not the FWHM itself.  For a Lorentzian
@@ -97,11 +97,11 @@ def calc_fwhm(
 def calc_peak_to_peak(
     field: np.ndarray, intensity: np.ndarray, pos_idx: int, neg_idx: int
 ) -> float:
-    r"""Compute the peak-to-peak separation :math:`\Delta H_{pp}`.
+    r"""Compute the peak-to-peak separation :math:`Delta H_{pp}`.
 
     The peak-to-peak width of a derivative ESR line is defined as the distance
     in magnetic-field units between the positive and the negative extrema.  It
-    is commonly denoted :math:`\Delta H_{pp}` and is a convenient measure for
+    is commonly denoted :math:`Delta H_{pp}` and is a convenient measure for
     the line width without converting to the absorption representation.
 
     Parameters
