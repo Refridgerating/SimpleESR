@@ -1842,6 +1842,24 @@ class SpanPeakSelector:
                 foreground=[("!disabled", "white")],
             )
             style.configure("Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
+
+            style.layout("Analysis.Treeview", style.layout("Treeview"))
+            style.configure(
+                "Analysis.Treeview",
+                bordercolor="#d9d9d9",
+                borderwidth=1,
+            )
+            try:
+                style.configure(
+                    "Analysis.Treeview",
+                    rowbordercolor="#d9d9d9",
+                    rowborderwidth=1,
+                    columnbordercolor="#d9d9d9",
+                    columnborderwidth=1,
+                    columndashes=(2, 2),
+                )
+            except tk.TclError:
+                pass
         except Exception:
             ButtonCls = tk.Button
             button_kwargs = {
@@ -2156,7 +2174,7 @@ class SpanPeakSelector:
         ).pack(anchor="w", padx=5, pady=(5, 0))
         peak_columns = ("trace", "peak", "pos", "neg")
         self.peak_tree = ttk.Treeview(
-            peak_frame, columns=peak_columns, show="headings", height=5
+            peak_frame, columns=peak_columns, show="headings", height=5, style="Analysis.Treeview"
         )
         peak_headings = {
             "trace": "Trace",
@@ -2177,7 +2195,7 @@ class SpanPeakSelector:
             result_frame, text="Analysis Results", font=("TkDefaultFont", 10, "bold")
         ).pack(anchor="w", padx=5, pady=(5, 0))
         columns = ("analysis", "peak", "pos_x", "pos_y", "neg_x", "neg_y", "width")
-        self.tree = ttk.Treeview(result_frame, columns=columns, show="headings", height=5)
+        self.tree = ttk.Treeview(result_frame, columns=columns, show="headings", height=5, style="Analysis.Treeview")
         headings = {
             "analysis": "Analysis",
             "peak": "Peak",
@@ -2199,7 +2217,7 @@ class SpanPeakSelector:
         ).pack(anchor="w", padx=5, pady=(5, 0))
         lorentz_columns = ("analysis", "peak", "h_res", "delta", "A", "B")
         self.lorentz_tree = ttk.Treeview(
-            lorentz_frame, columns=lorentz_columns, show="headings", height=5
+            lorentz_frame, columns=lorentz_columns, show="headings", height=5, style="Analysis.Treeview"
         )
         lorentz_headings = {
             "analysis": "Analysis",
@@ -2221,7 +2239,7 @@ class SpanPeakSelector:
         ).pack(anchor="w", padx=5, pady=(5, 0))
         compare_cols = ("param", "first", "second", "diff")
         self.compare_tree = ttk.Treeview(
-            compare_frame, columns=compare_cols, show="headings", height=6
+            compare_frame, columns=compare_cols, show="headings", height=6, style="Analysis.Treeview"
         )
         compare_headings = {
             "param": "Parameter",
