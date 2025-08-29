@@ -996,12 +996,6 @@ class SpanPeakSelector:
                 a_guess = 1.0
 
         p0 = (self.selected_peak, delta_guess, a_guess, 0.0)
-        params, stats = fit_lorentzian_derivative(field, intensity, p0=p0)
-
-        h_res, delta, A, B = params
-        chi2 = stats["chi2"]
-        stderr = stats["stderr"]
-        residuals = stats["residuals"]
 
         def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float):
             x = H - H_res
@@ -1010,12 +1004,17 @@ class SpanPeakSelector:
             disp = delta * (delta**2 - x**2) / denom
             return A * sym + B * disp
 
+        CHI2_THRESHOLD = 1e-6
+
+        # Perform the initial fit and set up the residual plot and fit line
+        params, stats = fit_lorentzian_derivative(field, intensity, p0=p0)
+        h_res, delta, A, B = params
+        residuals = stats["residuals"]
         fit = _model(field, h_res, delta, A, B)
         (line,) = self.ax.plot(field, fit, label=f"Lorentzian fit at {self.selected_peak:.3f}")
         self.ax.legend()
         self.ax.figure.canvas.draw_idle()
 
-        # Show residual plot
         res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
         if self.plot_frame is not None and isinstance(res_plot, tuple):
             fig_r, _ax_r = res_plot
@@ -1026,20 +1025,69 @@ class SpanPeakSelector:
             if self.root is not None:
                 self.root.update_idletasks()
 
-        accept = messagebox.askyesno(
-            "Lorentzian Fit",
-            (
-                f"H_res={h_res:.3f}\n"
-                f"Delta={delta:.3f}\nA={A:.3f}\nB={B:.3f}\n"
-                f"chi^2={chi2:.3e}\n"
-                f"stderr={stderr}\nAccept fit?"
-            ),
-        )
+        # Allow the user to iterate the fit if the statistics indicate a poor result
+        while True:
+            chi2 = stats["chi2"]
+            stderr = stats["stderr"]
 
-        if not accept:
-            line.remove()
+            if chi2 <= CHI2_THRESHOLD:
+                accept = messagebox.askyesno(
+                    "Lorentzian Fit",
+                    (
+                        f"H_res={h_res:.3f}\n"
+                        f"Delta={delta:.3f}\nA={A:.3f}\nB={B:.3f}\n"
+                        f"chi^2={chi2:.3e}\n"
+                        f"stderr={stderr}\nAccept fit?"
+                    ),
+                )
+                if not accept:
+                    line.remove()
+                    self.ax.figure.canvas.draw_idle()
+                    return
+                break
+
+            choice = messagebox.askyesnocancel(
+                "Lorentzian Fit",
+                (
+                    f"H_res={h_res:.3f}\n"
+                    f"Delta={delta:.3f}\nA={A:.3f}\nB={B:.3f}\n"
+                    f"chi^2={chi2:.3e}\n"
+                    f"stderr={stderr}\n"
+                    "Fit not optimal.\n"
+                    "Yes: accept fit\n"
+                    "No: iterate once\n"
+                    "Cancel: iterate until convergence",
+                ),
+            )
+
+            if choice is True:
+                break
+            elif choice is False:
+                p0 = params
+                params, stats = fit_lorentzian_derivative(field, intensity, p0=p0)
+            else:
+                prev = params
+                for _ in range(50):
+                    p0 = params
+                    params, stats = fit_lorentzian_derivative(field, intensity, p0=p0)
+                    if np.allclose(params, prev, atol=1e-12, rtol=0):
+                        break
+                    prev = params
+
+            h_res, delta, A, B = params
+            fit = _model(field, h_res, delta, A, B)
+            line.set_ydata(fit)
+            residuals = stats["residuals"]
+            res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
+            if self.plot_frame is not None and isinstance(res_plot, tuple):
+                fig_r, _ax_r = res_plot
+                canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)
+                canvas_r.draw()
+                canvas_r.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                self.extra_canvases.append(canvas_r)
+                if self.root is not None:
+                    self.root.update_idletasks()
             self.ax.figure.canvas.draw_idle()
-            return
 
         result = {
             "analysis": "Lorentzian",
