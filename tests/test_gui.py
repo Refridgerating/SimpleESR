@@ -81,6 +81,42 @@ def test_peak_to_peak_analysis():
     plt.close(fig)
 
 
+def test_analysis_shows_and_hides_range():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+    patch_obj = MagicMock()
+    selector.ax.axvspan = MagicMock(return_value=patch_obj)
+    selector.ax.figure.canvas.draw_idle = MagicMock()
+    with patch("esr_lab.gui.find_peak", return_value=(1, 3)), \
+        patch("esr_lab.gui.calc_fwhm", return_value=0.5), \
+        patch("esr_lab.gui.messagebox.showinfo"):
+        selector.onselect(0.0, 4.0)
+    selector.ax.axvspan.assert_called_once()
+    patch_obj.remove.assert_called_once()
+    plt.close(fig)
+
+
+def test_tree_selection_highlights_range():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+    selector.ax.figure.canvas.draw_idle = MagicMock()
+    patch_obj = MagicMock()
+    selector.ax.axvspan = MagicMock(return_value=patch_obj)
+    selector.ranges = [(1.0, 2.0)]
+    tree = MagicMock()
+    tree.selection.return_value = ["item"]
+    tree.index.return_value = 0
+    selector.tree = tree
+    selector._on_tree_select()
+    selector.ax.axvspan.assert_called_once_with(1.0, 2.0, color="grey", alpha=0.3)
+    tree.selection.return_value = []
+    selector._on_tree_select()
+    patch_obj.remove.assert_called_once()
+    plt.close(fig)
+
+
 def test_fwhm_differs_from_peak_to_peak():
     field = np.linspace(-5, 5, 10001)
     intensity = field * np.exp(-field**2 / 2)
