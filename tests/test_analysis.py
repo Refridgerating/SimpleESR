@@ -94,6 +94,42 @@ def test_peak_finder_pairs():
     assert pairs == [(5, 7), (11, 13)]
 
 
+def test_peak_finder_handles_reversed_derivative_polarity():
+    field = np.arange(20.0)
+    base_intensity = np.array(
+        [
+            0,
+            1,
+            0,
+            -1,
+            0,
+            2,
+            0,
+            -2,
+            0,
+            0,
+            0,
+            1.5,
+            0,
+            -1.5,
+            0,
+            0.5,
+            0,
+            -0.5,
+            0,
+            0,
+        ]
+    )
+
+    intensity = -base_intensity
+
+    pairs = peak_finder(field, intensity)
+
+    # Positive peaks now appear on the right and negative on the left, but the
+    # indices should still identify the correct peak locations.
+    assert pairs == [(7, 5), (13, 11)]
+
+
 def test_peak_finder_curvature_on_absorption():
     field = np.linspace(-5, 5, 10001)
     intensity = np.exp(-field**2)
