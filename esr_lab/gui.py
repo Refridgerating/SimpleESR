@@ -15,6 +15,7 @@ from tkinter import filedialog, messagebox, ttk, colorchooser, simpledialog
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
@@ -546,6 +547,7 @@ class SpanPeakSelector:
         self.selector: SpanSelector | None = None
         self.analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm
         self.analysis_label: str = "FWHM"
+        self.range_patch: Patch | None = None
 
     # ------------------------------------------------------------------
     def _prompt_peak(self) -> int | None:
@@ -738,6 +740,11 @@ class SpanPeakSelector:
         """
         self._save_state()
 
+        if self.range_patch is not None and self.ax is not None:
+            self.range_patch.remove()
+            self.range_patch = None
+            self.ax.figure.canvas.draw_idle()
+
         if self.tree is not None and "width" in self.tree["columns"]:
             # The tree keeps previously analysed data; only the analysis label
             # column distinguishes between different result types so the width
@@ -760,6 +767,8 @@ class SpanPeakSelector:
             pos_y = self.spectrum.intensity[pos_idx]
             neg_field = self.spectrum.field[neg_idx]
             neg_y = self.spectrum.intensity[neg_idx]
+            start, end = sorted((pos_field, neg_field))
+            self.ranges.append((start, end))
             result = {
                 "analysis": self.analysis_label,
                 "peak": int(self.current_peak),
@@ -790,7 +799,6 @@ class SpanPeakSelector:
             )
             return
 
-        self.ranges.clear()
         if self.selector is not None:
             self.selector.disconnect_events()
         assert self.ax is not None
@@ -890,6 +898,10 @@ class SpanPeakSelector:
 
         start, end = sorted((xmin, xmax))
         self.ranges.append((start, end))
+        highlight: Patch | None = None
+        if self.ax is not None:
+            highlight = self.ax.axvspan(start, end, color="grey", alpha=0.3)
+            self.ax.figure.canvas.draw_idle()
 
         if self.selector is not None:
             self.selector.disconnect_events()
@@ -949,6 +961,11 @@ class SpanPeakSelector:
         # Maintain backwards-compatible notification for the tests
         messagebox.showinfo("Peak analysis", "\n".join(lines))
 
+        if highlight is not None:
+            highlight.remove()
+            if self.ax is not None:
+                self.ax.figure.canvas.draw_idle()
+
     # ------------------------------------------------------------------
     def _update_selected_peak(self, value: str) -> None:
         """Update the stored peak position from the slider."""
@@ -957,6 +974,30 @@ class SpanPeakSelector:
             self.selected_peak = float(value)
         except ValueError:
             self.selected_peak = None
+
+    # ------------------------------------------------------------------
+    def _on_tree_select(self, _event: object | None = None) -> None:
+        """Highlight the range associated with the selected analysis row."""
+
+        if self.ax is None or self.tree is None:
+            return
+
+        if self.range_patch is not None:
+            self.range_patch.remove()
+            self.range_patch = None
+            self.ax.figure.canvas.draw_idle()
+
+        items = self.tree.selection() if hasattr(self.tree, "selection") else []
+        if not items:
+            return
+
+        idx = self.tree.index(items[0])
+        if idx >= len(self.ranges):
+            return
+
+        start, end = self.ranges[idx]
+        self.range_patch = self.ax.axvspan(start, end, color="grey", alpha=0.3)
+        self.ax.figure.canvas.draw_idle()
 
     # ------------------------------------------------------------------
     def _fit_lorentzian(self) -> None:
@@ -1492,6 +1533,11 @@ class SpanPeakSelector:
 
     def _refresh_tables(self) -> None:
         """Refresh the analysis tables for the currently active trace."""
+
+        if self.range_patch is not None and self.ax is not None:
+            self.range_patch.remove()
+            self.range_patch = None
+            self.ax.figure.canvas.draw_idle()
 
         if self.peak_tree is not None:
             for item in self.peak_tree.get_children():
@@ -2209,6 +2255,8 @@ class SpanPeakSelector:
             self.tree.heading(col, text=text)
             self.tree.column(col, anchor=tk.CENTER)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
+        if hasattr(self.tree, "bind"):
+            self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 
         lorentz_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         lorentz_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
