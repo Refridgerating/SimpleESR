@@ -1896,13 +1896,14 @@ class SpanPeakSelector:
                 borderwidth=1,
             )
             try:
+                # Draw light borders around each cell to form a simple grid
+                # separating the table entries in the analysis panel.
                 style.configure(
                     "Analysis.Treeview",
                     rowbordercolor="#d9d9d9",
                     rowborderwidth=1,
                     columnbordercolor="#d9d9d9",
                     columnborderwidth=1,
-                    columndashes=(2, 2),
                 )
             except tk.TclError:
                 pass
