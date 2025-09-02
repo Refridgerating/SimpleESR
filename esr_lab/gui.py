@@ -1182,6 +1182,38 @@ class SpanPeakSelector:
                     self.root.update_idletasks()
             self.ax.figure.canvas.draw_idle()
 
+        label = f"Lorentzian fit at {self.selected_peak:.3f}"
+        self.trace_lines.append(line)
+        self.spectra.append(
+            ESRSpectrum(
+                field=field.copy(),
+                intensity=fit.copy(),
+                metadata=self.spectrum.metadata,
+            )
+        )
+        self.labels.append(label)
+        self.results_all.append([])
+        self.lorentz_all.append([])
+        self.ranges_all.append([])
+        self.auto_peaks_all.append([])
+        if self.trace_combo is not None and self.trace_var is not None:
+            self.trace_combo["values"] = self.labels
+        if self.delete_btn is not None:
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
+        if self.toggle_frame is not None:
+            var = tk.BooleanVar(value=True)
+            idx = len(self.trace_lines) - 1
+            chk = tk.Checkbutton(
+                self.toggle_frame,
+                text=label,
+                variable=var,
+                command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
+            )
+            chk.pack(anchor="w")
+            self.trace_vars.append(var)
+        self.update_legend()
+        self.ax.figure.canvas.draw_idle()
+
         result = {
             "analysis": "Lorentzian",
             "peak": int(self.current_peak),
