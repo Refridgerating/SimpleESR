@@ -509,6 +509,9 @@ class SpanPeakSelector:
         # Plot lines and visibility state for each spectrum
         self.trace_lines: list[Line2D] = []
         self.trace_vars: list[tk.BooleanVar] = []
+        # Store Lorentzian fit overlays separately so they can be toggled
+        self.lorentz_lines: list[Line2D] = []
+        self.lorentz_vars: list[tk.BooleanVar] = []
 
         # GUI related attributes are initialised lazily in ``show`` so that the
         # class can be instantiated in environments without a display (e.g. the
@@ -690,6 +693,7 @@ class SpanPeakSelector:
         if self.ax is not None:
             self.ax.clear()
             self.trace_lines = []
+            self.lorentz_lines = []
             for sp, lbl in zip(self.spectra, self.labels):
                 (line,) = self.ax.plot(sp.field, sp.intensity, label=lbl)
                 self.trace_lines.append(line)
@@ -702,6 +706,7 @@ class SpanPeakSelector:
                 child.destroy()
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
             self.trace_vars = []
+            self.lorentz_vars = []
             for i, lbl in enumerate(self.labels):
                 var = tk.BooleanVar(value=True)
                 chk = tk.Checkbutton(
@@ -1012,7 +1017,6 @@ class SpanPeakSelector:
         residuals = stats["residuals"]
         fit = _model(field, h_res, delta, A, B)
         (line,) = self.ax.plot(field, fit, label=f"Lorentzian fit at {self.selected_peak:.3f}")
-        self.ax.legend()
         self.ax.figure.canvas.draw_idle()
 
         res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
@@ -1111,6 +1115,22 @@ class SpanPeakSelector:
                     f"{B:.3f}",
                 ),
             )
+
+        # Track the Lorentzian line so it can be toggled like regular traces
+        self.lorentz_lines.append(line)
+        if self.toggle_frame is not None:
+            var = tk.BooleanVar(value=True)
+            idx = len(self.lorentz_lines) - 1
+            chk = tk.Checkbutton(
+                self.toggle_frame,
+                text=line.get_label(),
+                variable=var,
+                command=lambda i=idx, v=var: self._toggle_lorentz(i, v.get()),
+            )
+            chk.pack(anchor="w")
+            self.lorentz_vars.append(var)
+
+        self.update_legend()
 
     def fit_lorentzian(self) -> None:
         """Fit the Lorentzian model to the peak chosen via the slider."""
@@ -1625,6 +1645,18 @@ class SpanPeakSelector:
         self._rescale()
         self._rescale()
 
+    def _toggle_lorentz(self, index: int, show: bool) -> None:
+        """Show or hide the Lorentzian fit at the given index."""
+
+        if not (0 <= index < len(self.lorentz_lines)):
+            return
+
+        self.lorentz_lines[index].set_visible(show)
+
+        self.update_legend()
+        self._rescale()
+        self._rescale()
+
     def _set_label(self, index: int, text: str) -> None:
         """Update the stored label for a trace."""
 
@@ -1694,9 +1726,6 @@ class SpanPeakSelector:
         if self.ax is None:
             return
 
-        if len(self.trace_lines) <= 1:
-            return
-
         handles: list[Line2D] = []
         labels: list[str] = []
         for line, label in zip(self.trace_lines, self.labels):
@@ -1704,6 +1733,11 @@ class SpanPeakSelector:
             if line.get_visible():
                 handles.append(line)
                 labels.append(label)
+
+        for line in self.lorentz_lines:
+            if line.get_visible():
+                handles.append(line)
+                labels.append(line.get_label())
 
         if handles:
             leg = self.ax.legend(handles, labels)
