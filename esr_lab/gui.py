@@ -509,9 +509,6 @@ class SpanPeakSelector:
         # Plot lines and visibility state for each spectrum
         self.trace_lines: list[Line2D] = []
         self.trace_vars: list[tk.BooleanVar] = []
-        # Store Lorentzian fit overlays separately so they can be toggled
-        self.lorentz_lines: list[Line2D] = []
-        self.lorentz_vars: list[tk.BooleanVar] = []
 
         # GUI related attributes are initialised lazily in ``show`` so that the
         # class can be instantiated in environments without a display (e.g. the
@@ -693,7 +690,6 @@ class SpanPeakSelector:
         if self.ax is not None:
             self.ax.clear()
             self.trace_lines = []
-            self.lorentz_lines = []
             for sp, lbl in zip(self.spectra, self.labels):
                 (line,) = self.ax.plot(sp.field, sp.intensity, label=lbl)
                 self.trace_lines.append(line)
@@ -706,7 +702,6 @@ class SpanPeakSelector:
                 child.destroy()
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
             self.trace_vars = []
-            self.lorentz_vars = []
             for i, lbl in enumerate(self.labels):
                 var = tk.BooleanVar(value=True)
                 chk = tk.Checkbutton(
@@ -1116,21 +1111,87 @@ class SpanPeakSelector:
                 ),
             )
 
-        # Track the Lorentzian line so it can be toggled like regular traces
-        self.lorentz_lines.append(line)
-        if self.toggle_frame is not None:
-            var = tk.BooleanVar(value=True)
-            idx = len(self.lorentz_lines) - 1
-            chk = tk.Checkbutton(
-                self.toggle_frame,
-                text=line.get_label(),
-                variable=var,
-                command=lambda i=idx, v=var: self._toggle_lorentz(i, v.get()),
+        label = line.get_label()
+        self.trace_lines.append(line)
+        self.spectra.append(
+            ESRSpectrum(
+                field=field.copy(),
+                intensity=fit.copy(),
+                metadata=self.spectrum.metadata,
             )
-            chk.pack(anchor="w")
-            self.lorentz_vars.append(var)
+        )
+        self.labels.append(label)
+        self.results_all.append([])
+        self.lorentz_all.append([])
+        self.ranges_all.append([])
+        self.auto_peaks_all.append([])
+
+        if (
+            self.trace_combo is None
+            and self.control_frame is not None
+            and self.root is not None
+        ):
+            self.trace_var = tk.StringVar(value=self.labels[0])
+            self.trace_combo = ttk.Combobox(
+                self.control_frame,
+                textvariable=self.trace_var,
+                values=self.labels,
+                state="readonly",
+            )
+            self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            try:
+                self.delete_btn = ttk.Button(
+                    self.control_frame,
+                    text="Delete Trace",
+                    command=self.delete_trace,
+                    style="Compact.TButton",
+                )
+            except Exception:
+                self.delete_btn = tk.Button(
+                    self.control_frame, text="Delete Trace", command=self.delete_trace
+                )
+            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            self.toggle_frame = tk.Frame(self.control_frame)
+            self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+            tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
+            self.trace_vars = []
+            for i, lbl in enumerate(self.labels):
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=lbl,
+                    variable=var,
+                    command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+        else:
+            if self.trace_combo is not None and self.trace_var is not None:
+                self.trace_combo["values"] = self.labels
+            if self.delete_btn is not None:
+                self.delete_btn.config(
+                    state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED
+                )
+            if self.toggle_frame is not None:
+                var = tk.BooleanVar(value=True)
+                idx = len(self.trace_lines) - 1
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=label,
+                    variable=var,
+                    command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+
+        if self.delete_btn is not None:
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
 
         self.update_legend()
+        self._rescale()
 
     def fit_lorentzian(self) -> None:
         """Fit the Lorentzian model to the peak chosen via the slider."""
@@ -1645,18 +1706,6 @@ class SpanPeakSelector:
         self._rescale()
         self._rescale()
 
-    def _toggle_lorentz(self, index: int, show: bool) -> None:
-        """Show or hide the Lorentzian fit at the given index."""
-
-        if not (0 <= index < len(self.lorentz_lines)):
-            return
-
-        self.lorentz_lines[index].set_visible(show)
-
-        self.update_legend()
-        self._rescale()
-        self._rescale()
-
     def _set_label(self, index: int, text: str) -> None:
         """Update the stored label for a trace."""
 
@@ -1733,11 +1782,6 @@ class SpanPeakSelector:
             if line.get_visible():
                 handles.append(line)
                 labels.append(label)
-
-        for line in self.lorentz_lines:
-            if line.get_visible():
-                handles.append(line)
-                labels.append(line.get_label())
 
         if handles:
             leg = self.ax.legend(handles, labels)

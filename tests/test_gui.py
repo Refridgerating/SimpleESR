@@ -361,7 +361,8 @@ def test_lorentzian_fit_overlay():
     spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
     fig, selector.ax = plt.subplots()
-    selector.ax.plot(spectrum.field, spectrum.intensity)
+    (line0,) = selector.ax.plot(spectrum.field, spectrum.intensity)
+    selector.trace_lines = [line0]
     selector.selected_peak = -0.5
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative",
@@ -374,14 +375,15 @@ def test_lorentzian_fit_overlay():
         ask.assert_called_once()
         plot_res.assert_called_once()
         assert len(selector.ax.lines) == 2
-        assert len(selector.lorentz_lines) == 1
-        line = selector.lorentz_lines[0]
-        selector._toggle_lorentz(0, False)
+        assert len(selector.trace_lines) == 2
+        line = selector.trace_lines[1]
+        selector._toggle_trace(1, False)
         assert not line.get_visible()
     plt.close(fig)
 
     fig, selector.ax = plt.subplots()
-    selector.ax.plot(spectrum.field, spectrum.intensity)
+    (line0,) = selector.ax.plot(spectrum.field, spectrum.intensity)
+    selector.trace_lines = [line0]
     selector.selected_peak = 0.5
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative",
@@ -393,8 +395,8 @@ def test_lorentzian_fit_overlay():
         fit.assert_called_once()
         ask.assert_called_once()
         assert len(selector.ax.lines) == 1
-        # No new Lorentzian line added when fit is rejected
-        assert len(selector.lorentz_lines) == 1
+        # No new trace added when fit is rejected
+        assert len(selector.trace_lines) == 1
     plt.close(fig)
 
 
