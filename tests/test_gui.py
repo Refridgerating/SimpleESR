@@ -374,6 +374,10 @@ def test_lorentzian_fit_overlay():
         ask.assert_called_once()
         plot_res.assert_called_once()
         assert len(selector.ax.lines) == 2
+        assert len(selector.lorentz_lines) == 1
+        line = selector.lorentz_lines[0]
+        selector._toggle_lorentz(0, False)
+        assert not line.get_visible()
     plt.close(fig)
 
     fig, selector.ax = plt.subplots()
@@ -389,6 +393,8 @@ def test_lorentzian_fit_overlay():
         fit.assert_called_once()
         ask.assert_called_once()
         assert len(selector.ax.lines) == 1
+        # No new Lorentzian line added when fit is rejected
+        assert len(selector.lorentz_lines) == 1
     plt.close(fig)
 
 
