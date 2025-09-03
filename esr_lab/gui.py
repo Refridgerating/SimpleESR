@@ -532,8 +532,6 @@ class SpanPeakSelector:
         self.toggle_frame: tk.Frame | None = None
         self.extra_canvases: list[FigureCanvasTkAgg] = []
         self.trace_var: tk.StringVar | None = None
-        self.peak_slider: tk.Scale | None = None
-        self.selected_peak: float | None = None
         self.meta_label: tk.Label | None = None
         self.metadata_text: str = ""
         self.delete_btn: tk.Button | ttk.Button | None = None
@@ -954,52 +952,31 @@ class SpanPeakSelector:
                 self.find_btn.config(state=tk.NORMAL)
 
     # ------------------------------------------------------------------
-    def _update_selected_peak(self, value: str) -> None:
-        """Update the stored peak position from the slider."""
-
-        try:
-            self.selected_peak = float(value)
-        except ValueError:
-            self.selected_peak = None
-
-    # ------------------------------------------------------------------
     def _fit_lorentzian(self) -> None:
         """Fit a Lorentzian derivative using the full data set.
 
-        The slider only provides an initial guess for the resonance field.  The
-        actual fit is performed on the complete spectrum so that the symmetric
-        and dispersive components are determined from all available data.
+        Initial parameter guesses are derived from the automatically
+        detected peak indices.
         """
 
         self._save_state()
 
         assert self.ax is not None
 
-        if self.selected_peak is None:
-            messagebox.showwarning("Lorentzian Fit", "No peak selected")
-            return
-
         field = self.spectrum.field
         intensity = self.spectrum.intensity
 
-        field_min = float(np.min(field))
-        field_max = float(np.max(field))
-        window = (field_max - field_min) * 0.05
-        start = self.selected_peak - window / 2
-        end = self.selected_peak + window / 2
+        if len(self.auto_peaks) < self.current_peak:
+            self.peak_finder()
+            if len(self.auto_peaks) < self.current_peak:
+                messagebox.showwarning("Lorentzian Fit", "No peaks available")
+                return
 
-        try:
-            pos_idx, neg_idx = find_peak(field, intensity, start, end)
-            delta_guess = abs(field[pos_idx] - field[neg_idx]) / 2.0
-            a_guess = (intensity[pos_idx] - intensity[neg_idx]) / 2.0
-        except ValueError:
-            # Fallback guesses if the window does not contain valid peaks
-            delta_guess = (field_max - field_min) / 20.0
-            a_guess = (float(np.max(intensity)) - float(np.min(intensity))) / 2.0
-            if a_guess == 0.0:
-                a_guess = 1.0
-
-        p0 = (self.selected_peak, delta_guess, a_guess, 0.0)
+        pos_idx, neg_idx = self.auto_peaks[self.current_peak - 1]
+        h_res_guess = (field[pos_idx] + field[neg_idx]) / 2.0
+        delta_guess = abs(field[pos_idx] - field[neg_idx]) / 2.0
+        a_guess = (intensity[pos_idx] - intensity[neg_idx]) / 2.0
+        p0 = (h_res_guess, delta_guess, a_guess, 0.0)
 
         def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float):
             x = H - H_res
@@ -1015,7 +992,7 @@ class SpanPeakSelector:
         h_res, delta, A, B = params
         residuals = stats["residuals"]
         fit = _model(field, h_res, delta, A, B)
-        (line,) = self.ax.plot(field, fit, label=f"Lorentzian fit at {self.selected_peak:.3f}")
+        (line,) = self.ax.plot(field, fit, label=f"Lorentzian fit at {h_res:.3f}")
         self.ax.figure.canvas.draw_idle()
 
         res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
@@ -1198,7 +1175,7 @@ class SpanPeakSelector:
         self._rescale()
 
     def fit_lorentzian(self) -> None:
-        """Fit the Lorentzian model to the peak chosen via the slider."""
+        """Fit the Lorentzian model to an automatically detected peak."""
 
         peak_choice = self._prompt_peak()
         if peak_choice is None:
@@ -1698,14 +1675,6 @@ class SpanPeakSelector:
         self.ranges = self.ranges_all[self.current]
         self.auto_peaks = self.auto_peaks_all[self.current]
 
-        field_min = float(np.min(self.spectrum.field))
-        field_max = float(np.max(self.spectrum.field))
-        if self.peak_slider is not None:
-            self.peak_slider.config(from_=field_min, to=field_max)
-            mid = (field_min + field_max) / 2
-            self.peak_slider.set(mid)
-            self.selected_peak = mid
-
         self._refresh_tables()
         self._update_metadata_display()
         self._rescale()
@@ -2185,21 +2154,6 @@ class SpanPeakSelector:
             **button_kwargs,
         )
         _wrap_buttons(button_row1)
-
-        field_min = float(np.min(self.spectrum.field))
-        field_max = float(np.max(self.spectrum.field))
-        self.peak_slider = tk.Scale(
-            control_frame,
-            from_=field_min,
-            to=field_max,
-            orient=tk.HORIZONTAL,
-            label="Peak position",
-            command=self._update_selected_peak,
-        )
-        mid = (field_min + field_max) / 2
-        self.peak_slider.set(mid)
-        self.selected_peak = mid
-        self.peak_slider.pack(fill=tk.X, padx=5, pady=2)
 
         button_row2 = tk.Frame(control_frame)
         button_row2.pack(fill=tk.X, padx=5, pady=(2, 5))
