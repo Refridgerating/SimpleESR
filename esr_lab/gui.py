@@ -891,63 +891,67 @@ class SpanPeakSelector:
         start, end = sorted((xmin, xmax))
         self.ranges.append((start, end))
 
-        if self.selector is not None:
-            self.selector.disconnect_events()
-
-        pos_idx, neg_idx = find_peak(
-            self.spectrum.field, self.spectrum.intensity, start, end
-        )
-        width = self.analysis_func(
-            self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
-        )
-        pos_field = self.spectrum.field[pos_idx]
-        pos_y = self.spectrum.intensity[pos_idx]
-        neg_field = self.spectrum.field[neg_idx]
-        neg_y = self.spectrum.intensity[neg_idx]
-
-        result = {
-            "analysis": self.analysis_label,
-            "peak": int(self.current_peak),
-            "pos_x": float(pos_field),
-            "pos_y": float(pos_y),
-            "neg_x": float(neg_field),
-            "neg_y": float(neg_y),
-            "width": float(width),
-        }
-        self.results.append(result)
-
-        if self.tree is not None:
-            self.tree.insert(
-                "",
-                tk.END,
-                values=(
-                    self.analysis_label,
-                    f"{self.current_peak}",
-                    f"{pos_field:.3f}",
-                    f"{pos_y:.3f}",
-                    f"{neg_field:.3f}",
-                    f"{neg_y:.3f}",
-                    f"{width:.3f}",
-                ),
+        try:
+            pos_idx, neg_idx = find_peak(
+                self.spectrum.field, self.spectrum.intensity, start, end
             )
-
-        lines = [
-            (
-                f"Peak {r['peak']}: pos={r['pos_x']:.3f}, neg={r['neg_x']:.3f}, "
-                f"{r['analysis']}={r['width']:.3f}"
+            width = self.analysis_func(
+                self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
             )
-            for r in self.results
-        ]
+            pos_field = self.spectrum.field[pos_idx]
+            pos_y = self.spectrum.intensity[pos_idx]
+            neg_field = self.spectrum.field[neg_idx]
+            neg_y = self.spectrum.intensity[neg_idx]
 
-        if self.analyse_btn is not None:
-            self.analyse_btn.config(state=tk.NORMAL)
-        if self.dhpp_btn is not None:
-            self.dhpp_btn.config(state=tk.NORMAL)
-        if self.find_btn is not None:
-            self.find_btn.config(state=tk.NORMAL)
+            result = {
+                "analysis": self.analysis_label,
+                "peak": int(self.current_peak),
+                "pos_x": float(pos_field),
+                "pos_y": float(pos_y),
+                "neg_x": float(neg_field),
+                "neg_y": float(neg_y),
+                "width": float(width),
+            }
+            self.results.append(result)
 
-        # Maintain backwards-compatible notification for the tests
-        messagebox.showinfo("Peak analysis", "\n".join(lines))
+            if self.tree is not None:
+                self.tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        self.analysis_label,
+                        f"{self.current_peak}",
+                        f"{pos_field:.3f}",
+                        f"{pos_y:.3f}",
+                        f"{neg_field:.3f}",
+                        f"{neg_y:.3f}",
+                        f"{width:.3f}",
+                    ),
+                )
+
+            lines = [
+                (
+                    f"Peak {r['peak']}: pos={r['pos_x']:.3f}, neg={r['neg_x']:.3f}, "
+                    f"{r['analysis']}={r['width']:.3f}"
+                )
+                for r in self.results
+            ]
+
+            # Maintain backwards-compatible notification for the tests
+            messagebox.showinfo("Peak analysis", "\n".join(lines))
+        except ValueError:
+            messagebox.showerror(
+                "Peak analysis", "Both peaks must be within the selected range"
+            )
+        finally:
+            if self.selector is not None:
+                self.selector.disconnect_events()
+            if self.analyse_btn is not None:
+                self.analyse_btn.config(state=tk.NORMAL)
+            if self.dhpp_btn is not None:
+                self.dhpp_btn.config(state=tk.NORMAL)
+            if self.find_btn is not None:
+                self.find_btn.config(state=tk.NORMAL)
 
     # ------------------------------------------------------------------
     def _update_selected_peak(self, value: str) -> None:
