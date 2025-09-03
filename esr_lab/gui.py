@@ -1345,15 +1345,25 @@ class SpanPeakSelector:
                 dialog = tk.Toplevel(self.root)
                 dialog.title("Baseline Points")
                 tk.Label(dialog, textvariable=count_var).pack(padx=10, pady=5)
-                done = tk.BooleanVar(value=False)
+                confirmed = False
 
                 def confirm() -> None:
-                    done.set(True)
+                    nonlocal confirmed
+                    confirmed = True
                     dialog.destroy()
 
-                tk.Button(dialog, text="Confirm selection", command=confirm).pack(
-                    padx=10, pady=5
+                def cancel() -> None:
+                    dialog.destroy()
+
+                btn = tk.Frame(dialog)
+                btn.pack(padx=10, pady=5)
+                tk.Button(btn, text="Confirm selection", command=confirm).pack(
+                    side=tk.LEFT, padx=5
                 )
+                tk.Button(btn, text="Cancel", command=cancel).pack(
+                    side=tk.LEFT, padx=5
+                )
+                dialog.protocol("WM_DELETE_WINDOW", cancel)
 
                 editor = BaselinePointEditor(self.ax, field, intensity, degree)
 
@@ -1361,9 +1371,12 @@ class SpanPeakSelector:
                     count_var.set(f"Selected points: {len(editor.get_points())}")
 
                 editor.on_update = _update_count
-                dialog.wait_variable(done)
+                dialog.wait_window()
                 editor.disconnect()
                 pts = editor.get_points()
+                if not confirmed:
+                    editor.clear_artists()
+                    return
                 if len(pts) < 2:
                     editor.clear_artists()
                     messagebox.showwarning(

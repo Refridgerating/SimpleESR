@@ -331,6 +331,81 @@ def test_baseline_correction_auto_cancel():
     plt.close(fig)
 
 
+def test_baseline_correction_manual_cancel():
+    spectrum = ESRSpectrum(
+        field=np.array([0.0, 1.0, 2.0]), intensity=np.array([1.0, 2.0, 3.0])
+    )
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.root = object()
+    fig, selector.ax = plt.subplots()
+    (line,) = selector.ax.plot(spectrum.field, spectrum.intensity)
+    selector.trace_lines = [line]
+    selector.ax.figure.canvas.draw_idle = MagicMock()
+
+    editor = MagicMock()
+    editor.get_points.return_value = [(0.0, 1.0), (2.0, 3.0)]
+    editor.clear_artists = MagicMock()
+    editor.disconnect = MagicMock()
+
+    class DummyVar:
+        def __init__(self, value=None):
+            self.value = value
+
+        def set(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+    class DummyWidget:
+        def pack(self, *args, **kwargs):
+            pass
+
+    class DummyDialog:
+        def __init__(self, master=None):
+            pass
+
+        def title(self, *args, **kwargs):
+            pass
+
+        def protocol(self, *args, **kwargs):
+            pass
+
+        def destroy(self):
+            pass
+
+        def wait_window(self):
+            pass
+
+    with patch(
+        "esr_lab.gui.SpanPeakSelector._get_baseline_options", return_value=(True, False)
+    ), patch(
+        "esr_lab.gui.BaselinePointEditor", return_value=editor
+    ), patch(
+        "esr_lab.gui.tk.StringVar", side_effect=lambda *a, **k: DummyVar()
+    ), patch(
+        "esr_lab.gui.tk.BooleanVar", side_effect=lambda *a, **k: DummyVar()
+    ), patch(
+        "esr_lab.gui.tk.Label", side_effect=lambda *a, **k: DummyWidget()
+    ), patch(
+        "esr_lab.gui.tk.Button", side_effect=lambda *a, **k: DummyWidget()
+    ), patch(
+        "esr_lab.gui.tk.Frame", side_effect=lambda *a, **k: DummyWidget()
+    ), patch(
+        "esr_lab.gui.tk.Toplevel", side_effect=lambda *a, **k: DummyDialog()
+    ), patch(
+        "esr_lab.gui.messagebox.showwarning"
+    ) as warn, patch(
+        "esr_lab.gui.baseline_correct"
+    ) as bc:
+        selector.baseline_correction()
+        bc.assert_not_called()
+        editor.clear_artists.assert_called_once()
+        warn.assert_not_called()
+
+    plt.close(fig)
+
+
 def test_baseline_editor_clear():
     field = np.linspace(0.0, 2.0, 3)
     intensity = np.zeros(3)
