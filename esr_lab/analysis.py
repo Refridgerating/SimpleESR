@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.signal import find_peaks
+from scipy.optimize import curve_fit
 import sympy as sp
 
 # ---------------------------------------------------------------------------
@@ -415,6 +416,12 @@ def fit_lorentzian_derivative(
         of the fitted parameters as a tuple and ``"residuals"`` holding the
         residual array.
     """
+    ''''
+    def _model(H: np.ndarray, H_0: float, gamma_0: float, H_1: float, gamma_1: float) -> np.ndarray:
+        x = H - H_0
+        y = H - H_1
+        return -2*x/(gamma_0**2*(1+(x/gamma_0)**2)**2) + -2*y/(gamma_1**2*(1+(y/gamma_1)**2)**2)
+    '''
 
     def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float) -> np.ndarray:
         x = H - H_res
