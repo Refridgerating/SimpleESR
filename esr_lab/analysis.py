@@ -2,9 +2,47 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 from scipy.signal import find_peaks
 import sympy as sp
+
+# ---------------------------------------------------------------------------
+# Cache for previously determined resonance fields
+# ---------------------------------------------------------------------------
+# Stores resonance fields keyed by the base name of the analysed file.  The
+# cache is persisted alongside this module so values survive across sessions.
+H_RES_CACHE: dict[str, float] = {}
+H_RES_CACHE_FILE = Path(__file__).with_name("h_res_cache.json")
+
+
+def load_h_res_cache() -> None:
+    """Populate :data:`H_RES_CACHE` from the on-disk JSON cache if present."""
+
+    if H_RES_CACHE_FILE.exists():
+        try:
+            data = json.loads(H_RES_CACHE_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                H_RES_CACHE.update({str(k): float(v) for k, v in data.items()})
+        except (OSError, json.JSONDecodeError):
+            pass
+
+
+def save_h_res_cache() -> None:
+    """Serialise :data:`H_RES_CACHE` to :data:`H_RES_CACHE_FILE`."""
+
+    try:
+        H_RES_CACHE_FILE.write_text(
+            json.dumps(H_RES_CACHE), encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+
+# Load existing cache on import so repeated analyses can reuse stored values.
+load_h_res_cache()
 
 
 def find_peak(
@@ -410,6 +448,38 @@ def fit_lorentzian_derivative(
     }
 
     return (float(h_res), float(delta), float(A), float(B)), stats
+
+
+def get_resonance_field(
+    path: str | Path,
+    field: np.ndarray,
+    intensity: np.ndarray,
+    p0: tuple[float, float, float, float] | None = None,
+) -> float:
+    """Return the resonance field for ``path`` using a cached value when available.
+
+    Parameters
+    ----------
+    path:
+        Path to the analysed trace.  The base name of the file (portion before
+        the first underscore) is used as the cache key.
+    field, intensity:
+        Arrays containing the spectral data used for the fit when a cached value
+        is unavailable.
+    p0:
+        Optional initial guess forwarded to :func:`fit_lorentzian_derivative`
+        when a fit is performed.
+    """
+
+    base = Path(path).stem.split("_")[0]
+    if base in H_RES_CACHE:
+        return H_RES_CACHE[base]
+
+    params, _stats = fit_lorentzian_derivative(field, intensity, p0=p0)
+    h_res = params[0]
+    H_RES_CACHE[base] = h_res
+    save_h_res_cache()
+    return h_res
 
 
 # ---------------------------------------------------------------------------
