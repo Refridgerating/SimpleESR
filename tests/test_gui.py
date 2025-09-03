@@ -221,7 +221,6 @@ def test_multi_trace_results_isolated():
     ltree.get_children.return_value = []
     selector.lorentz_tree = ltree
 
-    selector.peak_slider = MagicMock()
 
     with patch("esr_lab.gui.find_peak", return_value=(1, 3)), \
         patch("esr_lab.gui.calc_fwhm", return_value=0.5), \
@@ -438,7 +437,7 @@ def test_lorentzian_fit_overlay():
     fig, selector.ax = plt.subplots()
     (line0,) = selector.ax.plot(spectrum.field, spectrum.intensity)
     selector.trace_lines = [line0]
-    selector.selected_peak = -0.5
+    selector.auto_peaks.append((1, 3))
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative",
         return_value=((0.0, 1.0, 1.0, 0.0), {"chi2": 0.0, "stderr": (0, 0, 0, 0), "residuals": np.zeros(5)}),
@@ -459,7 +458,8 @@ def test_lorentzian_fit_overlay():
     fig, selector.ax = plt.subplots()
     (line0,) = selector.ax.plot(spectrum.field, spectrum.intensity)
     selector.trace_lines = [line0]
-    selector.selected_peak = 0.5
+    selector.auto_peaks.clear()
+    selector.auto_peaks.append((1, 3))
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative",
         return_value=((0.0, 1.0, 1.0, 0.0), {"chi2": 0.0, "stderr": (0, 0, 0, 0), "residuals": np.zeros(5)}),
@@ -480,7 +480,7 @@ def test_lorentzian_fit_results_tabulated():
     selector = gui.SpanPeakSelector(spectrum)
     fig, selector.ax = plt.subplots()
     selector.ax.plot(spectrum.field, spectrum.intensity)
-    selector.selected_peak = 0.0
+    selector.auto_peaks.append((1, 3))
     selector.lorentz_tree = MagicMock()
     with patch(
         "esr_lab.gui.fit_lorentzian_derivative",
