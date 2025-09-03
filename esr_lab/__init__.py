@@ -12,6 +12,7 @@ from .analysis import (
     peak_finder,
     chi_square,
     baseline_correct,
+    get_resonance_field,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "peak_finder",
     "chi_square",
     "baseline_correct",
+    "get_resonance_field",
 ]
