@@ -20,6 +20,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.widgets import SpanSelector
 from typing import Callable
 from scipy.integrate import cumulative_trapezoid
+from scipy.signal import find_peaks
 import sympy as sp
 import copy
 
@@ -910,16 +911,18 @@ class SpanPeakSelector:
             num = 2
         if num is None:
             return
-        try:
-            peaks = auto_peak_finder(
-                self.spectrum.field,
-                self.spectrum.intensity,
-                expected=int(num) * 2,
-                method="curvature",
-            )
-        except ValueError as exc:
-            messagebox.showerror("Peak Finder", str(exc))
+        # Locate local maxima in the absorption trace. ``find_peaks`` returns
+        # all peak indices which are then ranked by their height to select the
+        # most prominent ``num`` peaks.
+        peaks, _ = find_peaks(self.spectrum.intensity)
+        if peaks.size < int(num):
+            messagebox.showerror("Peak Finder", "Not enough peaks found in the data")
             return
+
+        top = np.argsort(self.spectrum.intensity[peaks])[::-1][: int(num)]
+        peaks = peaks[top]
+        peaks.sort()
+        peaks = [int(p) for p in peaks]
 
         markers: list[Line2D] = []
         if self.ax is not None:
