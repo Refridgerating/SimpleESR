@@ -8,8 +8,12 @@ This project is at an early stage — we’re starting from the basics and will 
 - Display raw spectra.
 - Basic plotting and inspection tools.
 - Simple GUI for selecting a data file to plot.
-- Interactive span selection to measure ΔH_pp and FWHM.
-- Lorentzian fit for individual peaks using interactive slider
+- Measure ΔH_pp and FWHM.
+- Lorentzian fit for individual peaks
+- Baseline correction for data refinement
+- Trace integration, get absorption spectrum for absorption area analysis
+- g-factor calculation from H_res, and metadata
+- gyromagnetic ratio from calculated g-factor
 
 ## Requirements
 - Python 3.10+
