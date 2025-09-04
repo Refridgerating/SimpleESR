@@ -568,6 +568,29 @@ def test_lorentzian_fit_results_tabulated():
     plt.close(fig)
 
 
+def test_calculate_g_updates_results():
+    spectrum = ESRSpectrum(
+        field=np.linspace(-1, 1, 5),
+        intensity=np.zeros(5),
+        metadata={"Frequency": 9.5},
+    )
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.lorentz_results = [
+        {"analysis": "Lorentzian", "peak": 1, "h_res": 339.0, "delta": 1.0, "A": 1.0, "B": 0.0}
+    ]
+    tree = MagicMock()
+    tree.get_children.return_value = []
+    selector.lorentz_tree = tree
+    with patch("esr_lab.gui.messagebox.showinfo") as info:
+        selector.calculate_g()
+        info.assert_called_once()
+    g_val = selector.lorentz_results[0]["g"]
+    expected = gui.calc_g(339.0, 9.5)
+    assert np.isclose(g_val, expected)
+    tree.insert.assert_called_once()
+    assert tree.insert.call_args.kwargs["values"][-1] == f"{g_val:.3f}"
+
+
 def test_toolbar_has_default_tools_without_subplots():
     tools = [item[0] for item in gui.NavigationToolbarNoSubplots.toolitems if item]
     assert "Subplots" not in tools

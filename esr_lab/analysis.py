@@ -7,6 +7,9 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import find_peaks
 import sympy as sp
+from scipy.constants import h, physical_constants
+
+MU_B = physical_constants["Bohr magneton"][0]
 
 
 
@@ -125,6 +128,28 @@ def calc_peak_to_peak(
     """
 
     return float(abs(field[pos_idx] - field[neg_idx]))
+
+
+def calc_g(h_res: float, frequency: float) -> float:
+    r"""Calculate the g-factor from the resonance field and microwave frequency.
+
+    Parameters
+    ----------
+    h_res:
+        Resonance field of the peak in millitesla.
+    frequency:
+        Microwave frequency in gigahertz.
+
+    Returns
+    -------
+    float
+        The dimensionless g-factor computed via
+        :math:`g = h\nu/(\mu_B H_{res})`.
+    """
+
+    freq_hz = frequency * 1e9
+    h_res_t = h_res * 1e-3
+    return float(h * freq_hz / (MU_B * h_res_t))
 
 
 def peak_finder(
@@ -436,6 +461,7 @@ A, B = sp.symbols("A B")
 I = sp.Function("I")
 L_abs = sp.Function("L_abs")
 L_disp = sp.Function("L_disp")
+g_sym, nu, mu_B_sym, h_sym = sp.symbols("g nu mu_B h")
 
 # Symbols for displaying derivative expressions as textbook-style fractions
 dI_H, dL_abs_H, dL_disp_H, dH = sp.symbols(
@@ -462,6 +488,10 @@ FUNCTION_DETAILS: dict[str, tuple[str, sp.Expr | None]] = {
     "baseline_correct": (
         "Perform a polynomial baseline correction",
         None,
+    ),
+    "calc_g": (
+        "Compute the g-factor from resonance field and frequency",
+        sp.Eq(g_sym, h_sym * nu / (mu_B_sym * H)),
     ),
     "fit_lorentzian_derivative": (
         "Fit a derivative ESR line to a Lorentzian derivative model",

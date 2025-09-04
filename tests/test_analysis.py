@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from scipy.constants import h, physical_constants
 
 from esr_lab import (
     find_peak,
@@ -9,7 +10,11 @@ from esr_lab import (
     peak_finder,
     chi_square,
     baseline_correct,
+<<<<<<< HEAD
     get_resonance_field,
+=======
+    calc_g,
+>>>>>>> ad91b7b (Add g-factor calculation and GUI support)
 )
 
 
@@ -129,6 +134,7 @@ def test_baseline_correct_manual_and_auto():
     assert np.allclose(corrected_auto, signal)
 
 
+<<<<<<< HEAD
 def test_get_resonance_field_always_fits(monkeypatch):
     import esr_lab.analysis as analysis
 
@@ -148,3 +154,10 @@ def test_get_resonance_field_always_fits(monkeypatch):
     h2 = get_resonance_field(path, field, intensity)
     assert calls["n"] == 2
     assert h1 == h2 == 1.23
+=======
+def test_calc_g_expected_value():
+    mu_B = physical_constants["Bohr magneton"][0]
+    g_val = calc_g(339.0, 9.5)
+    expected = h * 9.5e9 / (mu_B * 0.339)
+    assert np.isclose(g_val, expected)
+>>>>>>> ad91b7b (Add g-factor calculation and GUI support)
