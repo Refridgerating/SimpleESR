@@ -1,4 +1,3 @@
-import json
 import numpy as np
 import pytest
 
@@ -130,16 +129,9 @@ def test_baseline_correct_manual_and_auto():
     assert np.allclose(corrected_auto, signal)
 
 
-def test_get_resonance_field_uses_cache(tmp_path, monkeypatch):
+def test_get_resonance_field_always_fits(monkeypatch):
     import esr_lab.analysis as analysis
 
-    # Use a temporary cache file to avoid interfering with real data
-    cache_file = tmp_path / "cache.json"
-    monkeypatch.setattr(analysis, "H_RES_CACHE_FILE", cache_file)
-    analysis.H_RES_CACHE.clear()
-    analysis.load_h_res_cache()
-
-    # Stub ``fit_lorentzian_derivative`` to track invocations
     calls = {"n": 0}
 
     def fake_fit(field, intensity, p0=None):
@@ -151,17 +143,8 @@ def test_get_resonance_field_uses_cache(tmp_path, monkeypatch):
     field = np.linspace(-5, 5, 11)
     intensity = np.zeros_like(field)
 
-    # First call performs the fit and stores the result
-    path1 = tmp_path / "sample_001.csv"
-    h1 = get_resonance_field(path1, field, intensity)
-    assert calls["n"] == 1
-
-    # Second call with same base name uses cached value
-    path2 = tmp_path / "sample_002.csv"
-    h2 = get_resonance_field(path2, field, intensity)
-    assert calls["n"] == 1
+    path = "sample_001.csv"
+    h1 = get_resonance_field(path, field, intensity)
+    h2 = get_resonance_field(path, field, intensity)
+    assert calls["n"] == 2
     assert h1 == h2 == 1.23
-
-    # Cache persisted to disk
-    data = json.loads(cache_file.read_text())
-    assert data["sample"] == 1.23
