@@ -168,6 +168,72 @@ def test_peak_finder_uses_auto_method():
     assert captured["method"] == "auto"
 
 
+def test_peak_finder_absorption_marks_peaks():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.array([0, 1, 0, 2, 0]))
+    selector = gui.SpanPeakSelector(spectrum)
+    fig, selector.ax = plt.subplots()
+
+    markers: list[MagicMock] = []
+
+    def fake_plot(*args, **kwargs):
+        m = MagicMock()
+        markers.append(m)
+        return [m]
+
+    selector.ax.plot = MagicMock(side_effect=fake_plot)
+
+    with patch("esr_lab.gui.auto_peak_finder", return_value=[1, 3]), \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
+        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+        patch("esr_lab.gui.messagebox.showinfo"):
+        selector.peak_finder_absorption()
+
+    assert selector.ax.plot.call_count == 2
+    assert all(m.remove.call_count == 1 for m in markers)
+    assert selector.abs_peaks == [1, 3]
+    plt.close(fig)
+
+
+def test_peak_finder_absorption_tabulates_positions():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.array([0, 1, 0, 2, 0]))
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.ax = None
+    tree = MagicMock()
+    tree.get_children.return_value = []
+    selector.peak_tree = tree
+    with patch("esr_lab.gui.auto_peak_finder", return_value=[1, 3]), \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
+        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+        patch("esr_lab.gui.messagebox.showinfo"):
+        selector.peak_finder_absorption()
+    tree.insert.assert_any_call(
+        "",
+        gui.tk.END,
+        values=(selector.labels[0], "1", "1.000", ""),
+    )
+
+
+def test_peak_finder_absorption_uses_curvature_method():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.array([0, 1, 0, 2, 0]))
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.ax = None
+    captured: dict[str, int | str] = {}
+
+    def fake_peak_finder(field, intensity, expected=4, width=15.0, method="zero"):
+        captured["method"] = method
+        captured["expected"] = expected
+        return [2]
+
+    with patch("esr_lab.gui.auto_peak_finder", new=fake_peak_finder), \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=1), \
+        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+        patch("esr_lab.gui.messagebox.showinfo"):
+        selector.peak_finder_absorption()
+
+    assert captured["method"] == "curvature"
+    assert captured["expected"] == 2
+
+
 def test_results_persist_across_analyses():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)

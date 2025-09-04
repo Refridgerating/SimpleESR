@@ -506,6 +506,12 @@ class SpanPeakSelector:
         ]
         self.auto_peaks = self.auto_peaks_all[self.current]
 
+        # Automatically detected absorption peak indices per trace
+        self.abs_peaks_all: list[list[int]] = [
+            [] for _ in self.spectra
+        ]
+        self.abs_peaks = self.abs_peaks_all[self.current]
+
         # Plot lines and visibility state for each spectrum
         self.trace_lines: list[Line2D] = []
         self.trace_vars: list[tk.BooleanVar] = []
@@ -521,6 +527,7 @@ class SpanPeakSelector:
         self.analyse_btn: tk.Button | ttk.Button | None = None
         self.dhpp_btn: tk.Button | ttk.Button | None = None
         self.find_btn: tk.Button | ttk.Button | None = None
+        self.find_abs_btn: tk.Button | ttk.Button | None = None
         self.fit_btn: tk.Button | ttk.Button | None = None
         self.integrate_btn: tk.Button | ttk.Button | None = None
         self.baseline_btn: tk.Button | ttk.Button | None = None
@@ -661,6 +668,7 @@ class SpanPeakSelector:
             "lorentz_all": copy.deepcopy(self.lorentz_all),
             "ranges_all": copy.deepcopy(self.ranges_all),
             "auto_peaks_all": copy.deepcopy(self.auto_peaks_all),
+            "abs_peaks_all": copy.deepcopy(self.abs_peaks_all),
             "current": self.current,
         }
         self._history.append(state)
@@ -679,12 +687,14 @@ class SpanPeakSelector:
         self.lorentz_all = state["lorentz_all"]
         self.ranges_all = state["ranges_all"]
         self.auto_peaks_all = state["auto_peaks_all"]
+        self.abs_peaks_all = state["abs_peaks_all"]
         self.current = state["current"]
         self.spectrum = self.spectra[self.current]
         self.results = self.results_all[self.current]
         self.lorentz_results = self.lorentz_all[self.current]
         self.ranges = self.ranges_all[self.current]
         self.auto_peaks = self.auto_peaks_all[self.current]
+        self.abs_peaks = self.abs_peaks_all[self.current]
         if self.ax is not None:
             self.ax.clear()
             self.trace_lines = []
@@ -801,6 +811,8 @@ class SpanPeakSelector:
             self.dhpp_btn.config(state=tk.DISABLED)
         if self.find_btn is not None:
             self.find_btn.config(state=tk.DISABLED)
+        if getattr(self, "find_abs_btn", None) is not None:
+            self.find_abs_btn.config(state=tk.DISABLED)
 
     def start_peak_to_peak(self) -> None:
         """Start interactive \u0394H_pp analysis using span selection."""
@@ -882,6 +894,66 @@ class SpanPeakSelector:
         self._refresh_tables()
         messagebox.showinfo("Peak Finder", "Peaks stored for analysis")
 
+    def peak_finder_absorption(self) -> None:
+        """Locate local maxima in absorption spectra and store them."""
+
+        self._save_state()
+
+        self.spectrum = self.spectra[self.current]
+        self.abs_peaks = self.abs_peaks_all[self.current]
+
+        try:
+            num = simpledialog.askinteger(
+                "Peak Finder", "How many peaks to expect?", initialvalue=2, minvalue=1
+            )
+        except Exception:
+            num = 2
+        if num is None:
+            return
+        try:
+            peaks = auto_peak_finder(
+                self.spectrum.field,
+                self.spectrum.intensity,
+                expected=int(num) * 2,
+                method="curvature",
+            )
+        except ValueError as exc:
+            messagebox.showerror("Peak Finder", str(exc))
+            return
+
+        markers: list[Line2D] = []
+        if self.ax is not None:
+            for p in peaks:
+                (marker,) = self.ax.plot(
+                    self.spectrum.field[p],
+                    self.spectrum.intensity[p],
+                    marker="o",
+                    color="red",
+                )
+                markers.append(marker)
+            self.ax.figure.canvas.draw_idle()
+
+        lines = [
+            f"Peak {i + 1}: pos={self.spectrum.field[p]:.3f}"
+            for i, p in enumerate(peaks)
+        ]
+        accept = messagebox.askyesno(
+            "Peak Finder", "\n".join(lines) + "\nAccept peaks?"
+        )
+
+        for m in markers:
+            m.remove()
+        if self.ax is not None:
+            self.ax.figure.canvas.draw_idle()
+
+        if not accept:
+            return
+
+        self.abs_peaks.clear()
+        self.abs_peaks.extend(peaks)
+        self._refresh_tables()
+        messagebox.showinfo("Peak Finder", "Peaks stored for analysis")
+
     # ------------------------------------------------------------------
     def onselect(self, xmin: float, xmax: float) -> None:
         """Handle span selections and display peak data."""
@@ -950,6 +1022,8 @@ class SpanPeakSelector:
                 self.dhpp_btn.config(state=tk.NORMAL)
             if self.find_btn is not None:
                 self.find_btn.config(state=tk.NORMAL)
+            if getattr(self, "find_abs_btn", None) is not None:
+                self.find_abs_btn.config(state=tk.NORMAL)
 
     # ------------------------------------------------------------------
     def _fit_lorentzian(self) -> None:
@@ -1106,6 +1180,7 @@ class SpanPeakSelector:
         self.lorentz_all.append([])
         self.ranges_all.append([])
         self.auto_peaks_all.append([])
+        self.abs_peaks_all.append([])
 
         if (
             self.trace_combo is None
@@ -1382,6 +1457,7 @@ class SpanPeakSelector:
         self.lorentz_all.append([])
         self.ranges_all.append([])
         self.auto_peaks_all.append([])
+        self.abs_peaks_all.append([])
 
         if (
             self.trace_combo is None
@@ -1572,6 +1648,7 @@ class SpanPeakSelector:
             for item in self.peak_tree.get_children():
                 self.peak_tree.delete(item)
             label = self.labels[self.current]
+            idx = 0
             for i, (p, n) in enumerate(self.auto_peaks):
                 self.peak_tree.insert(
                     "",
@@ -1581,6 +1658,18 @@ class SpanPeakSelector:
                         f"{i + 1}",
                         f"{self.spectrum.field[p]:.3f}",
                         f"{self.spectrum.field[n]:.3f}",
+                    ),
+                )
+                idx = i + 1
+            for j, p in enumerate(self.abs_peaks, start=idx + 1):
+                self.peak_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        label,
+                        f"{j}",
+                        f"{self.spectrum.field[p]:.3f}",
+                        "",
                     ),
                 )
 
@@ -1674,6 +1763,7 @@ class SpanPeakSelector:
         self.lorentz_results = self.lorentz_all[self.current]
         self.ranges = self.ranges_all[self.current]
         self.auto_peaks = self.auto_peaks_all[self.current]
+        self.abs_peaks = self.abs_peaks_all[self.current]
 
         self._refresh_tables()
         self._update_metadata_display()
@@ -1718,6 +1808,7 @@ class SpanPeakSelector:
         del self.lorentz_all[idx]
         del self.ranges_all[idx]
         del self.auto_peaks_all[idx]
+        del self.abs_peaks_all[idx]
         line = self.trace_lines.pop(idx)
         line.remove()
         if self.toggle_frame is not None:
@@ -1742,6 +1833,7 @@ class SpanPeakSelector:
         self.lorentz_results = self.lorentz_all[self.current]
         self.ranges = self.ranges_all[self.current]
         self.auto_peaks = self.auto_peaks_all[self.current]
+        self.abs_peaks = self.abs_peaks_all[self.current]
         if self.trace_combo is not None and self.trace_var is not None:
             self.trace_combo["values"] = self.labels
             self.trace_var.set(self.labels[self.current])
@@ -2151,6 +2243,12 @@ class SpanPeakSelector:
             button_row1,
             text="Find Peaks",
             command=self.peak_finder,
+            **button_kwargs,
+        )
+        self.find_abs_btn = ButtonCls(
+            button_row1,
+            text="Find Absorption Peaks",
+            command=self.peak_finder_absorption,
             **button_kwargs,
         )
         _wrap_buttons(button_row1)
