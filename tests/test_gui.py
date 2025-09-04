@@ -182,7 +182,7 @@ def test_peak_finder_absorption_marks_peaks():
 
     selector.ax.plot = MagicMock(side_effect=fake_plot)
 
-    with patch("esr_lab.gui.auto_peak_finder", return_value=[1, 3]), \
+    with patch("esr_lab.gui.find_peaks", return_value=(np.array([1, 3]), {})), \
         patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
         patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
         patch("esr_lab.gui.messagebox.showinfo"):
@@ -201,7 +201,7 @@ def test_peak_finder_absorption_tabulates_positions():
     tree = MagicMock()
     tree.get_children.return_value = []
     selector.peak_tree = tree
-    with patch("esr_lab.gui.auto_peak_finder", return_value=[1, 3]), \
+    with patch("esr_lab.gui.find_peaks", return_value=(np.array([1, 3]), {})), \
         patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
         patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
         patch("esr_lab.gui.messagebox.showinfo"):
@@ -213,25 +213,30 @@ def test_peak_finder_absorption_tabulates_positions():
     )
 
 
-def test_peak_finder_absorption_uses_curvature_method():
+def test_peak_finder_absorption_cancel():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.array([0, 1, 0, 2, 0]))
     selector = gui.SpanPeakSelector(spectrum)
-    selector.ax = None
-    captured: dict[str, int | str] = {}
+    fig, selector.ax = plt.subplots()
 
-    def fake_peak_finder(field, intensity, expected=4, width=15.0, method="zero"):
-        captured["method"] = method
-        captured["expected"] = expected
-        return [2]
+    markers: list[MagicMock] = []
 
-    with patch("esr_lab.gui.auto_peak_finder", new=fake_peak_finder), \
-        patch("esr_lab.gui.simpledialog.askinteger", return_value=1), \
-        patch("esr_lab.gui.messagebox.askyesno", return_value=True), \
+    def fake_plot(*args, **kwargs):
+        m = MagicMock()
+        markers.append(m)
+        return [m]
+
+    selector.ax.plot = MagicMock(side_effect=fake_plot)
+
+    with patch("esr_lab.gui.find_peaks", return_value=(np.array([1, 3]), {})), \
+        patch("esr_lab.gui.simpledialog.askinteger", return_value=2), \
+        patch("esr_lab.gui.messagebox.askyesno", return_value=False), \
         patch("esr_lab.gui.messagebox.showinfo"):
         selector.peak_finder_absorption()
 
-    assert captured["method"] == "curvature"
-    assert captured["expected"] == 2
+    assert selector.ax.plot.call_count == 2
+    assert all(m.remove.call_count == 1 for m in markers)
+    assert selector.abs_peaks == []
+    plt.close(fig)
 
 
 def test_results_persist_across_analyses():
