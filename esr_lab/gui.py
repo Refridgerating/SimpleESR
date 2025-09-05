@@ -1595,6 +1595,7 @@ class SpanPeakSelector:
         self.lorentz_all.append([])
         self.ranges_all.append([])
         self.auto_peaks_all.append([])
+        self.abs_peaks_all.append([])
 
         if (
             self.trace_combo is None
