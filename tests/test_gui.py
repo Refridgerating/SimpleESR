@@ -568,6 +568,34 @@ def test_lorentzian_fit_results_tabulated():
     plt.close(fig)
 
 
+def test_lorentzian_fit_uses_absorption_peaks():
+    field = np.linspace(-1, 1, 5)
+    intensity = np.array([0, 1, 2, 1, 0])
+    spectrum = ESRSpectrum(field=field, intensity=intensity)
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.labels[0] = "Trace 1 (absorption)"
+    fig, selector.ax = plt.subplots()
+    (line0,) = selector.ax.plot(field, intensity)
+    selector.trace_lines = [line0]
+    selector.abs_peaks.append(2)
+    with patch(
+        "esr_lab.gui.fit_lorentzian_absorption",
+        return_value=((0.0, 1.0, 1.0, 0.0), {"chi2": 0.0, "stderr": (0, 0, 0, 0), "residuals": np.zeros(5)}),
+    ) as fit, patch("esr_lab.gui.messagebox.askyesno", return_value=True), patch(
+        "esr_lab.gui.plot_residuals"
+    ), patch("esr_lab.gui.simpledialog.askinteger", return_value=1) as ask, patch.object(
+        gui.SpanPeakSelector, "peak_finder", side_effect=AssertionError("peak_finder called")
+    ), patch.object(
+        gui.SpanPeakSelector,
+        "peak_finder_absorption",
+        side_effect=AssertionError("absorption called"),
+    ):
+        selector.fit_lorentzian()
+        fit.assert_called_once()
+        assert ask.call_count == 1
+    plt.close(fig)
+
+
 def test_calculate_g_updates_results():
     spectrum = ESRSpectrum(
         field=np.linspace(-1, 1, 5),
