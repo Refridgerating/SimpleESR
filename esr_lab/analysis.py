@@ -440,6 +440,73 @@ def fit_lorentzian_derivative(
     return (float(h_res), float(delta), float(A), float(B)), stats
 
 
+def fit_lorentzian_absorption(
+    field: np.ndarray,
+    intensity: np.ndarray,
+    p0: tuple[float, float, float, float] | None = None,
+) -> tuple[tuple[float, float, float, float], dict[str, object]]:
+    """Fit an absorption spectrum to a Lorentzian model.
+
+    The absorption line is modelled as::
+
+        I(H) = A * delta^2 / ((H - H_res)^2 + delta^2) + C
+
+    where ``H_res`` denotes the resonance field, ``delta`` the half width at
+    half maximum (HWHM), ``A`` the amplitude and ``C`` a constant offset.
+
+    Parameters
+    ----------
+    field:
+        Array of magnetic-field values.
+    intensity:
+        Array of absorption intensities corresponding to ``field``.
+    p0:
+        Optional initial guess for the parameters ``(H_res, delta, A, C)``.  If
+        omitted, a heuristic guess is derived from the data.
+
+    Returns
+    -------
+    tuple[float, float, float, float]
+        Fitted parameters ``(H_res, delta, A, C)``.
+    dict[str, object]
+        Dictionary with diagnostic information.  Keys are ``"chi2"`` for the
+        reduced chi-square statistic, ``"stderr"`` containing the standard error
+        of the fitted parameters and ``"residuals"`` holding the residual array.
+    """
+
+    def _model(H: np.ndarray, H_res: float, delta: float, A: float, C: float) -> np.ndarray:
+        x = H - H_res
+        return A * delta**2 / (x**2 + delta**2) + C
+
+    if p0 is None:
+        peak_idx = int(np.argmax(intensity))
+        h_res_guess = float(field[peak_idx])
+        a_guess = float(intensity[peak_idx] - np.min(intensity))
+        c_guess = float(np.min(intensity))
+        if len(field) > 1:
+            delta_guess = float((field[-1] - field[0]) / len(field))
+        else:
+            delta_guess = 1.0
+        p0 = (h_res_guess, delta_guess, a_guess, c_guess)
+
+    from scipy.optimize import curve_fit
+
+    popt, pcov = curve_fit(_model, field, intensity, p0=p0)
+    h_res, delta, A, C = popt
+
+    fitted = _model(field, h_res, delta, A, C)
+    residuals = intensity - fitted
+    chi2 = chi_square(intensity, fitted, dof=len(field) - len(popt))
+    stderr = np.sqrt(np.diag(pcov))
+    stats = {
+        "chi2": float(chi2),
+        "stderr": tuple(float(s) for s in stderr),
+        "residuals": residuals.astype(float),
+    }
+
+    return (float(h_res), float(delta), float(A), float(C)), stats
+
+
 def get_resonance_field(
     path: str | Path,
     field: np.ndarray,
@@ -499,5 +566,9 @@ FUNCTION_DETAILS: dict[str, tuple[str, sp.Expr | None]] = {
             dI_H / dH,
             A * dL_abs_H / dH + B * dL_disp_H / dH,
         ),
+    ),
+    "fit_lorentzian_absorption": (
+        "Fit an absorption line to a Lorentzian model",
+        None,
     ),
 }

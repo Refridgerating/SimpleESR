@@ -28,6 +28,7 @@ from .analysis import (
     calc_fwhm,
     find_peak,
     fit_lorentzian_derivative,
+    fit_lorentzian_absorption,
     calc_peak_to_peak,
     peak_finder as auto_peak_finder,
     baseline_correct,
@@ -1045,29 +1046,64 @@ class SpanPeakSelector:
         field = self.spectrum.field
         intensity = self.spectrum.intensity
 
-        if len(self.auto_peaks) < self.current_peak:
-            self.peak_finder()
+        is_absorption = "absorption" in self.labels[self.current].lower()
+        if is_absorption:
+            if len(self.abs_peaks) < self.current_peak:
+                self.peak_finder_absorption()
+                if len(self.abs_peaks) < self.current_peak:
+                    messagebox.showwarning("Lorentzian Fit", "No peaks available")
+                    return
+            peak_idx = self.abs_peaks[self.current_peak - 1]
+            h_res_guess = field[peak_idx]
+            peak_val = intensity[peak_idx]
+            half_val = peak_val / 2.0
+            left = peak_idx
+            while left > 0 and intensity[left] > half_val:
+                left -= 1
+            right = peak_idx
+            while right < len(intensity) - 1 and intensity[right] > half_val:
+                right += 1
+            if left == peak_idx or right == peak_idx:
+                delta_guess = abs(field[1] - field[0]) * 5.0
+            else:
+                delta_guess = abs(field[right] - field[left]) / 2.0
+            a_guess = peak_val - float(np.min(intensity))
+            b_guess = float(np.min(intensity))
+            p0 = (h_res_guess, delta_guess, a_guess, b_guess)
+
+            def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float):
+                x = H - H_res
+                return A * delta**2 / (x**2 + delta**2) + B
+
+            fit_func = fit_lorentzian_absorption
+            param_label = "C"
+        else:
             if len(self.auto_peaks) < self.current_peak:
-                messagebox.showwarning("Lorentzian Fit", "No peaks available")
-                return
+                self.peak_finder()
+                if len(self.auto_peaks) < self.current_peak:
+                    messagebox.showwarning("Lorentzian Fit", "No peaks available")
+                    return
+            pos_idx, neg_idx = self.auto_peaks[self.current_peak - 1]
+            h_res_guess = (field[pos_idx] + field[neg_idx]) / 2.0
+            delta_guess = abs(field[pos_idx] - field[neg_idx]) / 2.0
+            a_guess = (intensity[pos_idx] - intensity[neg_idx]) / 2.0
+            b_guess = 0.0
+            p0 = (h_res_guess, delta_guess, a_guess, b_guess)
 
-        pos_idx, neg_idx = self.auto_peaks[self.current_peak - 1]
-        h_res_guess = (field[pos_idx] + field[neg_idx]) / 2.0
-        delta_guess = abs(field[pos_idx] - field[neg_idx]) / 2.0
-        a_guess = (intensity[pos_idx] - intensity[neg_idx]) / 2.0
-        p0 = (h_res_guess, delta_guess, a_guess, 0.0)
+            def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float):
+                x = H - H_res
+                denom = (x**2 + delta**2) ** 2
+                sym = -2.0 * delta**2 * x / denom
+                disp = delta * (delta**2 - x**2) / denom
+                return A * sym + B * disp
 
-        def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float):
-            x = H - H_res
-            denom = (x**2 + delta**2) ** 2
-            sym = -2.0 * delta**2 * x / denom
-            disp = delta * (delta**2 - x**2) / denom
-            return A * sym + B * disp
+            fit_func = fit_lorentzian_derivative
+            param_label = "B"
 
         CHI2_THRESHOLD = 1e-6
 
         # Perform the initial fit and set up the residual plot and fit line
-        params, stats = fit_lorentzian_derivative(field, intensity, p0=p0)
+        params, stats = fit_func(field, intensity, p0=p0)
         h_res, delta, A, B = params
         residuals = stats["residuals"]
         fit = _model(field, h_res, delta, A, B)
@@ -1093,10 +1129,10 @@ class SpanPeakSelector:
                 accept = messagebox.askyesno(
                     "Lorentzian Fit",
                     (
-                        f"H_res={h_res:.3f}\n"
-                        f"Delta={delta:.3f}\nA={A:.3f}\nB={B:.3f}\n"
-                        f"chi^2={chi2:.3e}\n"
-                        f"stderr={stderr}\nAccept fit?"
+                        f"H_res={h_res:.3f}\n",
+                        f"Delta={delta:.3f}\nA={A:.3f}\n{param_label}={B:.3f}\n",
+                        f"chi^2={chi2:.3e}\n",
+                        f"stderr={stderr}\nAccept fit?",
                     ),
                 )
                 if not accept:
@@ -1108,13 +1144,13 @@ class SpanPeakSelector:
             choice = messagebox.askyesnocancel(
                 "Lorentzian Fit",
                 (
-                    f"H_res={h_res:.3f}\n"
-                    f"Delta={delta:.3f}\nA={A:.3f}\nB={B:.3f}\n"
-                    f"chi^2={chi2:.3e}\n"
-                    f"stderr={stderr}\n"
-                    "Fit not optimal.\n"
-                    "Yes: accept fit\n"
-                    "No: iterate once\n"
+                    f"H_res={h_res:.3f}\n",
+                    f"Delta={delta:.3f}\nA={A:.3f}\n{param_label}={B:.3f}\n",
+                    f"chi^2={chi2:.3e}\n",
+                    f"stderr={stderr}\n",
+                    "Fit not optimal.\n",
+                    "Yes: accept fit\n",
+                    "No: iterate once\n",
                     "Cancel: iterate until convergence",
                 ),
             )
@@ -1123,12 +1159,12 @@ class SpanPeakSelector:
                 break
             elif choice is False:
                 p0 = params
-                params, stats = fit_lorentzian_derivative(field, intensity, p0=p0)
+                params, stats = fit_func(field, intensity, p0=p0)
             else:
                 prev = params
                 for _ in range(50):
                     p0 = params
-                    params, stats = fit_lorentzian_derivative(field, intensity, p0=p0)
+                    params, stats = fit_func(field, intensity, p0=p0)
                     if np.allclose(params, prev, atol=1e-12, rtol=0):
                         break
                     prev = params

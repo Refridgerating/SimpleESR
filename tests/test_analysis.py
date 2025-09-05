@@ -6,6 +6,7 @@ from esr_lab import (
     find_peak,
     calc_fwhm,
     fit_lorentzian_derivative,
+    fit_lorentzian_absorption,
     calc_peak_to_peak,
     peak_finder,
     chi_square,
@@ -70,6 +71,18 @@ def test_fit_lorentzian_derivative_parameters():
     params, stats = fit_lorentzian_derivative(field, intensity)
 
     assert np.allclose(params, (H_res, delta, A, B), atol=1e-6)
+    assert stats["chi2"] == pytest.approx(0.0, abs=1e-12)
+    assert np.allclose(stats["stderr"], (0.0, 0.0, 0.0, 0.0), atol=1e-6)
+    assert np.allclose(stats["residuals"], 0.0, atol=1e-12)
+
+
+def test_fit_lorentzian_absorption_parameters():
+    field = np.linspace(-10, 10, 1001)
+    H_res, delta, A, C = 1.0, 2.0, 3.0, 0.5
+    x = field - H_res
+    intensity = A * delta**2 / (x**2 + delta**2) + C
+    params, stats = fit_lorentzian_absorption(field, intensity)
+    assert np.allclose(params, (H_res, delta, A, C), atol=1e-6)
     assert stats["chi2"] == pytest.approx(0.0, abs=1e-12)
     assert np.allclose(stats["stderr"], (0.0, 0.0, 0.0, 0.0), atol=1e-6)
     assert np.allclose(stats["residuals"], 0.0, atol=1e-12)
