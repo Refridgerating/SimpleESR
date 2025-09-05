@@ -12,11 +12,8 @@ from .analysis import (
     peak_finder,
     chi_square,
     baseline_correct,
-<<<<<<< HEAD
     get_resonance_field,
-=======
     calc_g,
->>>>>>> ad91b7b (Add g-factor calculation and GUI support)
 )
 
 __all__ = [
@@ -31,9 +28,6 @@ __all__ = [
     "peak_finder",
     "chi_square",
     "baseline_correct",
-<<<<<<< HEAD
     "get_resonance_field",
-=======
     "calc_g",
->>>>>>> ad91b7b (Add g-factor calculation and GUI support)
 ]
