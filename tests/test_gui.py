@@ -290,10 +290,26 @@ def test_analyze_spectra_runs_pipeline():
         patch.object(selector, "calculate_g") as gcalc:
         selector.analyze_spectra()
         pf.assert_called_once()
-        dhpp.assert_called_once()
-        fwhm.assert_called_once()
-        fit.assert_called_once()
+        dhpp.assert_called_once_with(auto=True)
+        fwhm.assert_called_once_with(auto=True)
+        fit.assert_called_once_with(auto=True)
         gcalc.assert_called_once()
+
+
+def test_start_analysis_auto_processes_all_peaks():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.auto_peaks = [(1, 3), (0, 4)]
+    tree = MagicMock()
+    tree.get_children.return_value = []
+    selector.tree = tree
+    with patch("esr_lab.gui.calc_fwhm", return_value=0.5) as cf, \
+        patch("esr_lab.gui.messagebox.showinfo") as info:
+        selector.start_analysis(analysis_func=gui.calc_fwhm, auto=True)
+        assert cf.call_count == 2
+        assert len(selector.results) == 2
+        info.assert_called_once()
+    assert tree.insert.call_count == 2
 
 
 def test_multi_trace_results_isolated():

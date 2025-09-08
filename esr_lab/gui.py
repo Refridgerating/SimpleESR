@@ -751,6 +751,7 @@ class SpanPeakSelector:
         self,
         analysis_func: Callable[[np.ndarray, np.ndarray, int, int], float] = calc_fwhm,
         label: str = "FWHM",
+        auto: bool = False,
     ) -> None:
         """Enable span selection and prepare for analysis.
 
@@ -768,51 +769,55 @@ class SpanPeakSelector:
             # heading can remain unchanged.
             pass
 
+        self.analysis_func = analysis_func
+        self.analysis_label = label
+
+        if auto:
+            lines: list[str] = []
+            for i, (pos_idx, neg_idx) in enumerate(self.auto_peaks, start=1):
+                self.current_peak = i
+                width = self.analysis_func(
+                    self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
+                )
+                pos_field = self.spectrum.field[pos_idx]
+                pos_y = self.spectrum.intensity[pos_idx]
+                neg_field = self.spectrum.field[neg_idx]
+                neg_y = self.spectrum.intensity[neg_idx]
+                result = {
+                    "analysis": self.analysis_label,
+                    "peak": int(self.current_peak),
+                    "pos_x": float(pos_field),
+                    "pos_y": float(pos_y),
+                    "neg_x": float(neg_field),
+                    "neg_y": float(neg_y),
+                    "width": float(width),
+                }
+                self.results.append(result)
+                if self.tree is not None:
+                    self.tree.insert(
+                        "",
+                        tk.END,
+                        values=(
+                            self.analysis_label,
+                            f"{self.current_peak}",
+                            f"{pos_field:.3f}",
+                            f"{pos_y:.3f}",
+                            f"{neg_field:.3f}",
+                            f"{neg_y:.3f}",
+                            f"{width:.3f}",
+                        ),
+                    )
+                lines.append(
+                    f"Peak {self.current_peak}: pos={pos_field:.3f}, neg={neg_field:.3f}, {self.analysis_label}={width:.3f}"
+                )
+            if lines:
+                messagebox.showinfo("Peak analysis", "\n".join(lines))
+            return
+
         peak_choice = self._prompt_peak()
         if peak_choice is None:
             return
         self.current_peak = int(peak_choice)
-        self.analysis_func = analysis_func
-        self.analysis_label = label
-
-        if len(self.auto_peaks) >= self.current_peak:
-            pos_idx, neg_idx = self.auto_peaks[self.current_peak - 1]
-            width = self.analysis_func(
-                self.spectrum.field, self.spectrum.intensity, pos_idx, neg_idx
-            )
-            pos_field = self.spectrum.field[pos_idx]
-            pos_y = self.spectrum.intensity[pos_idx]
-            neg_field = self.spectrum.field[neg_idx]
-            neg_y = self.spectrum.intensity[neg_idx]
-            result = {
-                "analysis": self.analysis_label,
-                "peak": int(self.current_peak),
-                "pos_x": float(pos_field),
-                "pos_y": float(pos_y),
-                "neg_x": float(neg_field),
-                "neg_y": float(neg_y),
-                "width": float(width),
-            }
-            self.results.append(result)
-            if self.tree is not None:
-                self.tree.insert(
-                    "",
-                    tk.END,
-                    values=(
-                        self.analysis_label,
-                        f"{self.current_peak}",
-                        f"{pos_field:.3f}",
-                        f"{pos_y:.3f}",
-                        f"{neg_field:.3f}",
-                        f"{neg_y:.3f}",
-                        f"{width:.3f}",
-                    ),
-                )
-            messagebox.showinfo(
-                "Peak analysis",
-                f"Peak {self.current_peak}: pos={pos_field:.3f}, neg={neg_field:.3f}, {self.analysis_label}={width:.3f}",
-            )
-            return
 
         self.ranges.clear()
         if self.selector is not None:
@@ -830,10 +835,10 @@ class SpanPeakSelector:
         if getattr(self, "find_abs_btn", None) is not None:
             self.find_abs_btn.config(state=tk.DISABLED)
 
-    def start_peak_to_peak(self) -> None:
+    def start_peak_to_peak(self, auto: bool = False) -> None:
         """Start interactive \u0394H_pp analysis using span selection."""
 
-        self.start_analysis(calc_peak_to_peak, "\u0394H_pp")
+        self.start_analysis(calc_peak_to_peak, "\u0394H_pp", auto=auto)
 
     def peak_finder(self) -> None:
         """Automatically detect peak pairs and store them for analysis.
@@ -1044,7 +1049,7 @@ class SpanPeakSelector:
                 self.find_abs_btn.config(state=tk.NORMAL)
 
     # ------------------------------------------------------------------
-    def _fit_lorentzian(self) -> None:
+    def _fit_lorentzian(self, auto: bool = False) -> None:
         """Fit a Lorentzian derivative using the full data set.
 
         Initial parameter guesses are derived from the automatically
@@ -1133,68 +1138,69 @@ class SpanPeakSelector:
                 self.root.update_idletasks()
 
         # Allow the user to iterate the fit if the statistics indicate a poor result
-        while True:
-            chi2 = stats["chi2"]
-            stderr = stats["stderr"]
+        if not auto:
+            while True:
+                chi2 = stats["chi2"]
+                stderr = stats["stderr"]
 
-            if chi2 <= CHI2_THRESHOLD:
-                accept = messagebox.askyesno(
+                if chi2 <= CHI2_THRESHOLD:
+                    accept = messagebox.askyesno(
+                        "Lorentzian Fit",
+                        (
+                            f"H_res={h_res:.3f}\n",
+                            f"Delta={delta:.3f}\nA={A:.3f}\n{param_label}={B:.3f}\n",
+                            f"chi^2={chi2:.3e}\n",
+                            f"stderr={stderr}\nAccept fit?",
+                        ),
+                    )
+                    if not accept:
+                        line.remove()
+                        self.ax.figure.canvas.draw_idle()
+                        return
+                    break
+
+                choice = messagebox.askyesnocancel(
                     "Lorentzian Fit",
                     (
                         f"H_res={h_res:.3f}\n",
                         f"Delta={delta:.3f}\nA={A:.3f}\n{param_label}={B:.3f}\n",
                         f"chi^2={chi2:.3e}\n",
-                        f"stderr={stderr}\nAccept fit?",
+                        f"stderr={stderr}\n",
+                        "Fit not optimal.\n",
+                        "Yes: accept fit\n",
+                        "No: iterate once\n",
+                        "Cancel: iterate until convergence",
                     ),
                 )
-                if not accept:
-                    line.remove()
-                    self.ax.figure.canvas.draw_idle()
-                    return
-                break
 
-            choice = messagebox.askyesnocancel(
-                "Lorentzian Fit",
-                (
-                    f"H_res={h_res:.3f}\n",
-                    f"Delta={delta:.3f}\nA={A:.3f}\n{param_label}={B:.3f}\n",
-                    f"chi^2={chi2:.3e}\n",
-                    f"stderr={stderr}\n",
-                    "Fit not optimal.\n",
-                    "Yes: accept fit\n",
-                    "No: iterate once\n",
-                    "Cancel: iterate until convergence",
-                ),
-            )
-
-            if choice is True:
-                break
-            elif choice is False:
-                p0 = params
-                params, stats = fit_func(field, intensity, p0=p0)
-            else:
-                prev = params
-                for _ in range(50):
+                if choice is True:
+                    break
+                elif choice is False:
                     p0 = params
                     params, stats = fit_func(field, intensity, p0=p0)
-                    if np.allclose(params, prev, atol=1e-12, rtol=0):
-                        break
+                else:
                     prev = params
+                    for _ in range(50):
+                        p0 = params
+                        params, stats = fit_func(field, intensity, p0=p0)
+                        if np.allclose(params, prev, atol=1e-12, rtol=0):
+                            break
+                        prev = params
 
-            h_res, delta, A, B = params
-            fit = _model(field, h_res, delta, A, B)
-            line.set_ydata(fit)
-            residuals = stats["residuals"]
-            res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
-            if self.plot_frame is not None and isinstance(res_plot, tuple):
-                fig_r, _ax_r = res_plot
-                canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)
-                canvas_r.draw()
-                canvas_r.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-                self.extra_canvases.append(canvas_r)
-                if self.root is not None:
-                    self.root.update_idletasks()
-            self.ax.figure.canvas.draw_idle()
+                h_res, delta, A, B = params
+                fit = _model(field, h_res, delta, A, B)
+                line.set_ydata(fit)
+                residuals = stats["residuals"]
+                res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
+                if self.plot_frame is not None and isinstance(res_plot, tuple):
+                    fig_r, _ax_r = res_plot
+                    canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)
+                    canvas_r.draw()
+                    canvas_r.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                    self.extra_canvases.append(canvas_r)
+                    if self.root is not None:
+                        self.root.update_idletasks()
+                self.ax.figure.canvas.draw_idle()
 
         result = {
             "analysis": "Lorentzian",
@@ -1303,8 +1309,16 @@ class SpanPeakSelector:
         self.update_legend()
         self._rescale()
 
-    def fit_lorentzian(self) -> None:
-        """Fit the Lorentzian model to an automatically detected peak."""
+    def fit_lorentzian(self, auto: bool = False) -> None:
+        """Fit the Lorentzian model to automatically detected peak(s)."""
+
+        if auto:
+            is_absorption = "absorption" in self.labels[self.current].lower()
+            num_peaks = len(self.abs_peaks) if is_absorption else len(self.auto_peaks)
+            for i in range(1, num_peaks + 1):
+                self.current_peak = i
+                self._fit_lorentzian(auto=True)
+            return
 
         peak_choice = self._prompt_peak()
         if peak_choice is None:
@@ -1405,9 +1419,9 @@ class SpanPeakSelector:
 
         try:
             self.peak_finder()
-            self.start_peak_to_peak()
-            self.start_analysis()
-            self.fit_lorentzian()
+            self.start_peak_to_peak(auto=True)
+            self.start_analysis(auto=True)
+            self.fit_lorentzian(auto=True)
             self.calculate_g()
         except Exception as exc:
             messagebox.showerror("Analyze Spectra", str(exc))
