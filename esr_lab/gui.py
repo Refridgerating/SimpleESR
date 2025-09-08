@@ -33,6 +33,7 @@ from .analysis import (
     peak_finder as auto_peak_finder,
     baseline_correct,
     calc_g,
+    calc_lorentzian_area,
     FUNCTION_DETAILS,
 )
 from .io import ESRLoader
@@ -546,6 +547,7 @@ class SpanPeakSelector:
         self.metadata_text: str = ""
         self.delete_btn: tk.Button | ttk.Button | None = None
         self.g_btn: tk.Button | ttk.Button | None = None
+        self.area_btn: tk.Button | ttk.Button | None = None
         self.undo_btn: tk.Button | ttk.Button | None = None
         self._history: list[dict[str, object]] = []
         # Keep track of which peak (1 or 2) the user is analysing.
@@ -1191,6 +1193,7 @@ class SpanPeakSelector:
             "delta": float(delta),
             "A": float(A),
             "B": float(B),
+            "kind": "absorption" if is_absorption else "derivative",
         }
         self.lorentz_results.append(result)
         if self.lorentz_tree is not None:
@@ -1385,6 +1388,31 @@ class SpanPeakSelector:
 
         self._refresh_tables()
         messagebox.showinfo("Calculate g", "\n".join(lines))
+
+    # ------------------------------------------------------------------
+    def calculate_area(self) -> None:
+        """Calculate the area for fitted Lorentzian absorption peaks."""
+
+        if not self.lorentz_results:
+            messagebox.showinfo("Area Integral", "No Lorentzian fits available")
+            return
+
+        lines: list[str] = []
+        for r in self.lorentz_results:
+            if r.get("kind") != "absorption":
+                continue
+            delta = float(r.get("delta", 0.0))
+            amp = float(r.get("A", 0.0))
+            area = calc_lorentzian_area(delta, amp)
+            r["area"] = area
+            lines.append(f"Peak {r['peak']}: area={area:.3f}")
+
+        if not lines:
+            messagebox.showinfo("Area Integral", "No absorption Lorentzian fits available")
+            return
+
+        self._refresh_tables()
+        messagebox.showinfo("Area Integral", "\n".join(lines))
 
     # ------------------------------------------------------------------
     def _get_baseline_options(self) -> tuple[bool, bool] | None:
@@ -1770,6 +1798,10 @@ class SpanPeakSelector:
             for r in self.lorentz_results:
                 g_val = r.get("g")
                 g_str = f"{g_val:.3f}" if isinstance(g_val, (int, float)) else ""
+                area_val = r.get("area")
+                area_str = (
+                    f"{area_val:.3f}" if isinstance(area_val, (int, float)) else ""
+                )
                 self.lorentz_tree.insert(
                     "",
                     tk.END,
@@ -1780,6 +1812,7 @@ class SpanPeakSelector:
                         f"{r['delta']:.3f}",
                         f"{r['A']:.3f}",
                         f"{r['B']:.3f}",
+                        area_str,
                         g_str,
                     ),
                 )
@@ -2368,6 +2401,13 @@ class SpanPeakSelector:
             **button_kwargs,
         )
 
+        self.area_btn = ButtonCls(
+            button_row3,
+            text="Area Integral",
+            command=self.calculate_area,
+            **button_kwargs,
+        )
+
         self.undo_btn = ButtonCls(
             button_row3,
             text="Undo",
@@ -2427,7 +2467,7 @@ class SpanPeakSelector:
         tk.Label(
             lorentz_frame, text="Lorentzian Fits", font=("TkDefaultFont", 10, "bold")
         ).pack(anchor="w", padx=5, pady=(5, 0))
-        lorentz_columns = ("analysis", "peak", "h_res", "delta", "A", "B", "g")
+        lorentz_columns = ("analysis", "peak", "h_res", "delta", "A", "B", "area", "g")
         self.lorentz_tree = ttk.Treeview(
             lorentz_frame, columns=lorentz_columns, show="headings", height=5
         )
@@ -2438,6 +2478,7 @@ class SpanPeakSelector:
             "delta": "Delta",
             "A": "A",
             "B": "B",
+            "area": "Area",
             "g": "g",
         }
         for col, text in lorentz_headings.items():
