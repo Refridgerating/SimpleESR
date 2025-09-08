@@ -13,6 +13,15 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, colorchooser, simpledialog
 
+# Attempt to import ``ttkbootstrap`` for modern themed widgets.  The optional
+# dependency provides nicer looking controls with rounded corners.  Importing it
+# here is safe even when the library is not installed; we simply fall back to
+# the standard ttk widgets in that case.
+try:  # pragma: no cover - optional dependency
+    import ttkbootstrap  # type: ignore
+except Exception:  # pragma: no cover - handled at runtime
+    ttkbootstrap = None
+
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
@@ -2070,7 +2079,63 @@ class SpanPeakSelector:
     def show(self) -> None:
         """Start the Tkinter main loop and display the analysis GUI."""
 
-        self.root = tk.Tk()
+        # ``ButtonCls`` and ``button_kwargs`` allow us to swap out the widget
+        # implementation depending on whether ``ttkbootstrap`` is available.  The
+        # themed widgets from ``ttkbootstrap`` feature rounded corners which give
+        # the interface a softer appearance reminiscent of modern "flat" GUI
+        # design.
+        ButtonCls: type[tk.Button] | type[ttk.Button]
+        button_kwargs: dict[str, object]
+
+        style = None
+        self.root = None
+
+        if ttkbootstrap is not None:  # pragma: no cover - depends on optional lib
+            try:
+                style = ttkbootstrap.Style(theme="flatly")
+                self.root = style.master
+                ButtonCls = ttkbootstrap.Button
+                button_kwargs = {"bootstyle": ("primary", "round")}
+                style.configure("Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
+            except Exception:
+                # If ``ttkbootstrap`` cannot initialise (e.g. no display), fall
+                # back to the classic ``ttk`` widgets below.
+                self.root = None
+
+        if self.root is None:
+            self.root = tk.Tk()
+            ButtonCls = ttk.Button
+            button_kwargs = {"style": "Modern.TButton"}
+            try:
+                style = ttk.Style(self.root)
+                style.theme_use("clam")
+                style.configure(
+                    "Modern.TButton",
+                    font=("TkDefaultFont", 9, "bold"),
+                    relief="raised",
+                    borderwidth=3,
+                    background="#4a90e2",
+                    foreground="white",
+                    padding=(5, 2),
+                )
+                style.map(
+                    "Modern.TButton",
+                    background=[("active", "#357ab7"), ("!disabled", "#4a90e2")],
+                    foreground=[("!disabled", "white")],
+                )
+                style.configure("Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
+            except Exception:
+                ButtonCls = tk.Button
+                button_kwargs = {
+                    "font": ("TkDefaultFont", 9, "bold"),
+                    "relief": tk.RAISED,
+                    "bd": 3,
+                    "bg": "#4a90e2",
+                    "fg": "white",
+                    "activebackground": "#357ab7",
+                }
+
+        # Basic window housekeeping such as maximising the window if supported.
         self.root.title("ESR Spectrum")
         try:
             self.root.update_idletasks()
@@ -2085,38 +2150,8 @@ class SpanPeakSelector:
                     self.root.geometry(f"{width}x{height}+0+0")
                 except Exception:
                     pass
-        self._create_menu()
 
-        ButtonCls: type[tk.Button] | type[ttk.Button] = ttk.Button
-        button_kwargs: dict[str, object] = {"style": "Modern.TButton"}
-        try:
-            style = ttk.Style(self.root)
-            style.theme_use("clam")
-            style.configure(
-                "Modern.TButton",
-                font=("TkDefaultFont", 9, "bold"),
-                relief="raised",
-                borderwidth=3,
-                background="#4a90e2",
-                foreground="white",
-                padding=(5, 2),
-            )
-            style.map(
-                "Modern.TButton",
-                background=[("active", "#357ab7"), ("!disabled", "#4a90e2")],
-                foreground=[("!disabled", "white")],
-            )
-            style.configure("Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
-        except Exception:
-            ButtonCls = tk.Button
-            button_kwargs = {
-                "font": ("TkDefaultFont", 9, "bold"),
-                "relief": tk.RAISED,
-                "bd": 3,
-                "bg": "#4a90e2",
-                "fg": "white",
-                "activebackground": "#357ab7",
-            }
+        self._create_menu()
 
         # Keep the analysis panel at roughly a quarter of the window width.  A
         # simple two-column grid layout with weights of 3:1 ensures that the
