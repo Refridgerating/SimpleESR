@@ -562,7 +562,15 @@ def test_lorentzian_fit_results_tabulated():
         selector.fit_lorentzian()
         fit.assert_called_once()
     assert selector.lorentz_results == [
-        {"analysis": "Lorentzian", "peak": 1, "h_res": 0.0, "delta": 1.0, "A": 2.0, "B": 3.0}
+        {
+            "analysis": "Lorentzian",
+            "peak": 1,
+            "h_res": 0.0,
+            "delta": 1.0,
+            "A": 2.0,
+            "B": 3.0,
+            "kind": "derivative",
+        }
     ]
     selector.lorentz_tree.insert.assert_called_once()
     plt.close(fig)
@@ -604,7 +612,15 @@ def test_calculate_g_updates_results():
     )
     selector = gui.SpanPeakSelector(spectrum)
     selector.lorentz_results = [
-        {"analysis": "Lorentzian", "peak": 1, "h_res": 339.0, "delta": 1.0, "A": 1.0, "B": 0.0}
+        {
+            "analysis": "Lorentzian",
+            "peak": 1,
+            "h_res": 339.0,
+            "delta": 1.0,
+            "A": 1.0,
+            "B": 0.0,
+            "kind": "absorption",
+        }
     ]
     tree = MagicMock()
     tree.get_children.return_value = []
@@ -617,6 +633,33 @@ def test_calculate_g_updates_results():
     assert np.isclose(g_val, expected)
     tree.insert.assert_called_once()
     assert tree.insert.call_args.kwargs["values"][-1] == f"{g_val:.3f}"
+
+
+def test_calculate_area_updates_results():
+    spectrum = ESRSpectrum(field=np.linspace(-1, 1, 5), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+    selector.lorentz_results = [
+        {
+            "analysis": "Lorentzian",
+            "peak": 1,
+            "h_res": 0.0,
+            "delta": 2.0,
+            "A": 3.0,
+            "B": 0.0,
+            "kind": "absorption",
+        }
+    ]
+    tree = MagicMock()
+    tree.get_children.return_value = []
+    selector.lorentz_tree = tree
+    with patch("esr_lab.gui.messagebox.showinfo") as info:
+        selector.calculate_area()
+        info.assert_called_once()
+    area_val = selector.lorentz_results[0]["area"]
+    expected = gui.calc_lorentzian_area(2.0, 3.0)
+    assert np.isclose(area_val, expected)
+    tree.insert.assert_called_once()
+    assert tree.insert.call_args.kwargs["values"][-2] == f"{area_val:.3f}"
 
 
 def test_toolbar_has_default_tools_without_subplots():
@@ -771,10 +814,26 @@ def test_spectra_comparison_tabulated():
     ]
     selector.lorentz_all = [
         [
-            {"analysis": "Lorentzian", "peak": 1, "h_res": 10.0, "delta": 0, "A": 0, "B": 0}
+            {
+                "analysis": "Lorentzian",
+                "peak": 1,
+                "h_res": 10.0,
+                "delta": 0,
+                "A": 0,
+                "B": 0,
+                "kind": "derivative",
+            }
         ],
         [
-            {"analysis": "Lorentzian", "peak": 1, "h_res": 12.0, "delta": 0, "A": 0, "B": 0}
+            {
+                "analysis": "Lorentzian",
+                "peak": 1,
+                "h_res": 12.0,
+                "delta": 0,
+                "A": 0,
+                "B": 0,
+                "kind": "derivative",
+            }
         ],
     ]
 

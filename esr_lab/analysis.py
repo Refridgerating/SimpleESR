@@ -152,6 +152,34 @@ def calc_g(h_res: float, frequency: float) -> float:
     return float(h * freq_hz / (MU_B * h_res_t))
 
 
+def calc_lorentzian_area(delta: float, amplitude: float) -> float:
+    """Calculate the area under a Lorentzian absorption line.
+
+    The absorption model used in :func:`fit_lorentzian_absorption` is
+
+    ``I(H) = A * delta**2 / ((H - H_res)**2 + delta**2) + C``.
+
+    The integral of the Lorentzian part (without the constant offset ``C``)
+    over the entire field range is ``pi * A * delta``.  This helper returns the
+    corresponding area for given half width at half maximum ``delta`` and
+    amplitude ``A``.
+
+    Parameters
+    ----------
+    delta:
+        Half width at half maximum (HWHM).
+    amplitude:
+        Amplitude ``A`` of the Lorentzian line.
+
+    Returns
+    -------
+    float
+        Area of the absorption Lorentzian.
+    """
+
+    return float(np.pi * amplitude * delta)
+
+
 def peak_finder(
     field: np.ndarray,
     intensity: np.ndarray,
@@ -525,6 +553,7 @@ def get_resonance_field(
 H_plus, H_minus = sp.symbols("H_+ H_-")
 FWHM, ΔH_pp, H = sp.symbols("FWHM ΔH_pp H")
 A, B = sp.symbols("A B")
+delta_sym, Area = sp.symbols("delta Area")
 I = sp.Function("I")
 L_abs = sp.Function("L_abs")
 L_disp = sp.Function("L_disp")
@@ -559,6 +588,10 @@ FUNCTION_DETAILS: dict[str, tuple[str, sp.Expr | None]] = {
     "calc_g": (
         "Compute the g-factor from resonance field and frequency",
         sp.Eq(g_sym, h_sym * nu / (mu_B_sym * H)),
+    ),
+    "calc_lorentzian_area": (
+        "Calculate the area under a Lorentzian absorption line",
+        sp.Eq(Area, sp.pi * A * delta_sym),
     ),
     "fit_lorentzian_derivative": (
         "Fit a derivative ESR line to a Lorentzian derivative model",

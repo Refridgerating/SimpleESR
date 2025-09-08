@@ -13,6 +13,7 @@ from esr_lab import (
     baseline_correct,
     get_resonance_field,
     calc_g,
+    calc_lorentzian_area,
 )
 
 
@@ -170,3 +171,11 @@ def test_calc_g_expected_value():
     g_val = calc_g(339.0, 9.5)
     expected = h * 9.5e9 / (mu_B * 0.339)
     assert np.isclose(g_val, expected)
+
+
+def test_calc_lorentzian_area_expected_value():
+    delta = 2.0
+    amp = 3.0
+    area = calc_lorentzian_area(delta, amp)
+    expected = np.pi * amp * delta
+    assert np.isclose(area, expected)

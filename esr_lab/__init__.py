@@ -15,6 +15,7 @@ from .analysis import (
     baseline_correct,
     get_resonance_field,
     calc_g,
+    calc_lorentzian_area,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "baseline_correct",
     "get_resonance_field",
     "calc_g",
+    "calc_lorentzian_area",
 ]
