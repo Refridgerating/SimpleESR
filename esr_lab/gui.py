@@ -168,7 +168,16 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         preview.grid(row=0, column=1, padx=5)
 
         def choose_color() -> None:
-            color = colorchooser.askcolor(color_ent.get())[1]
+            """Open a color chooser and update the preview on success."""
+
+            color = None
+            try:
+                color = colorchooser.askcolor(color_ent.get())[1]
+            except tk.TclError:
+                try:
+                    color = colorchooser.askcolor()[1]
+                except tk.TclError:
+                    color = None
             if color:
                 color_ent.delete(0, tk.END)
                 color_ent.insert(0, color)
