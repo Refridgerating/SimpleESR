@@ -2387,7 +2387,7 @@ class SpanPeakSelector:
 
         self.analyze_btn = ButtonCls(
             button_row1,
-            text="Analyze Spectra",
+            text="Auto Analyze",
             command=self.analyze_spectra,
             **button_kwargs,
         )
