@@ -537,6 +537,7 @@ class SpanPeakSelector:
         self.peak_tree: ttk.Treeview | None = None
         self.tree: ttk.Treeview | None = None
         self.lorentz_tree: ttk.Treeview | None = None
+        self.analyze_btn: tk.Button | ttk.Button | None = None
         self.analyse_btn: tk.Button | ttk.Button | None = None
         self.dhpp_btn: tk.Button | ttk.Button | None = None
         self.find_btn: tk.Button | ttk.Button | None = None
@@ -1397,6 +1398,19 @@ class SpanPeakSelector:
 
         self._refresh_tables()
         messagebox.showinfo("Calculate g", "\n".join(lines))
+
+    # ------------------------------------------------------------------
+    def analyze_spectra(self) -> None:
+        """Run peak finding, linewidth, fitting and g-factor analysis."""
+
+        try:
+            self.peak_finder()
+            self.start_peak_to_peak()
+            self.start_analysis()
+            self.fit_lorentzian()
+            self.calculate_g()
+        except Exception as exc:
+            messagebox.showerror("Analyze Spectra", str(exc))
 
     # ------------------------------------------------------------------
     def calculate_area(self) -> None:
@@ -2371,6 +2385,12 @@ class SpanPeakSelector:
         button_row1 = tk.Frame(control_frame)
         button_row1.pack(fill=tk.X, padx=5, pady=2)
 
+        self.analyze_btn = ButtonCls(
+            button_row1,
+            text="Analyze Spectra",
+            command=self.analyze_spectra,
+            **button_kwargs,
+        )
         self.analyse_btn = ButtonCls(
             button_row1,
             text="Analyse FWHM",
