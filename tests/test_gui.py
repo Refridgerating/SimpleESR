@@ -279,6 +279,23 @@ def test_results_persist_across_analyses():
     plt.close(fig)
 
 
+def test_analyze_spectra_runs_pipeline():
+    spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    selector = gui.SpanPeakSelector(spectrum)
+
+    with patch.object(selector, "peak_finder") as pf, \
+        patch.object(selector, "start_peak_to_peak") as dhpp, \
+        patch.object(selector, "start_analysis") as fwhm, \
+        patch.object(selector, "fit_lorentzian") as fit, \
+        patch.object(selector, "calculate_g") as gcalc:
+        selector.analyze_spectra()
+        pf.assert_called_once()
+        dhpp.assert_called_once()
+        fwhm.assert_called_once()
+        fit.assert_called_once()
+        gcalc.assert_called_once()
+
+
 def test_multi_trace_results_isolated():
     spec1 = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))

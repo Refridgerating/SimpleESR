@@ -13,6 +13,8 @@ This project is at an early stage — we’re starting from the basics and will 
 - Baseline correction for data refinement
 - Trace integration, get absorption spectrum for absorption area analysis
 - g-factor calculation from H_res, and metadata
+- One-click Analyze Spectra button running peak finding, ΔH_pp, FWHM,
+  Lorentzian fits and g-factor calculation
 - gyromagnetic ratio from calculated g-factor
 
 ## Requirements
