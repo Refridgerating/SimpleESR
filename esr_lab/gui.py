@@ -1463,13 +1463,58 @@ class SpanPeakSelector:
         messagebox.showinfo("Area Integral", "\n".join(lines))
 
     # ------------------------------------------------------------------
+    def _select_batch_spectra(self) -> list[int] | None:
+        """Prompt the user to choose spectra for batch processing.
+
+        Returns indices of selected spectra or ``None`` if the user cancels. If
+        no Tk root is present all spectra are selected automatically.
+        """
+
+        if self.root is None:
+            return list(range(len(self.spectra)))
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Batch Selection")
+        tk.Label(dialog, text="Select spectra to process:").pack(padx=10, pady=5)
+
+        listbox = tk.Listbox(dialog, selectmode=tk.MULTIPLE, exportselection=False)
+        for lbl in self.labels:
+            listbox.insert(tk.END, lbl)
+        listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+
+        selected: list[int] = []
+
+        def on_ok() -> None:
+            selected.extend(listbox.curselection())
+            dialog.destroy()
+
+        def on_cancel() -> None:
+            dialog.destroy()
+
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=(0, 5))
+        tk.Button(btn_frame, text="OK", command=on_ok).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
+
+        dialog.grab_set()
+        dialog.wait_window()
+
+        if not selected:
+            return None
+        return selected
+
+    # ------------------------------------------------------------------
     def batch_process(self) -> None:
         """Automatically analyse all loaded spectra with progress feedback."""
 
         if not self.spectra:
             return
 
-        total = len(self.spectra)
+        indices = self._select_batch_spectra()
+        if not indices:
+            return
+
+        total = len(indices)
         progress_win = None
         progress_bar = None
         if self.root is not None:
@@ -1486,7 +1531,8 @@ class SpanPeakSelector:
                 progress_win = None
                 progress_bar = None
 
-        for i, spec in enumerate(self.spectra):
+        for n, i in enumerate(indices):
+            spec = self.spectra[i]
             self.current = i
             self.spectrum = spec
             self.results = self.results_all[i]
@@ -1502,19 +1548,20 @@ class SpanPeakSelector:
             except Exception as exc:
                 messagebox.showerror("Batch Process", str(exc))
             if progress_bar is not None:
-                progress_bar["value"] = (i + 1) / total * 100.0
+                progress_bar["value"] = (n + 1) / total * 100.0
                 progress_win.update_idletasks()
 
         if progress_win is not None:
             progress_win.destroy()
 
-        self.current = 0
-        self.spectrum = self.spectra[0]
-        self.results = self.results_all[0]
-        self.lorentz_results = self.lorentz_all[0]
-        self.ranges = self.ranges_all[0]
-        self.auto_peaks = self.auto_peaks_all[0]
-        self.abs_peaks = self.abs_peaks_all[0]
+        first = indices[0]
+        self.current = first
+        self.spectrum = self.spectra[first]
+        self.results = self.results_all[first]
+        self.lorentz_results = self.lorentz_all[first]
+        self.ranges = self.ranges_all[first]
+        self.auto_peaks = self.auto_peaks_all[first]
+        self.abs_peaks = self.abs_peaks_all[first]
         self._refresh_tables()
 
     # ------------------------------------------------------------------
