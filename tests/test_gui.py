@@ -296,6 +296,25 @@ def test_analyze_spectra_runs_pipeline():
         gcalc.assert_called_once()
 
 
+def test_batch_process_respects_selection():
+    spec1 = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
+    spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))
+    selector = gui.SpanPeakSelector([spec1, spec2], labels=["one", "two"])
+
+    with patch.object(selector, "peak_finder") as pf, \
+        patch.object(selector, "start_peak_to_peak") as dhpp, \
+        patch.object(selector, "start_analysis") as fwhm, \
+        patch.object(selector, "fit_lorentzian") as fit, \
+        patch.object(selector, "_select_batch_spectra", return_value=[1]):
+        selector.batch_process()
+
+    pf.assert_called_once()
+    dhpp.assert_called_once_with(auto=True)
+    fwhm.assert_called_once_with(auto=True)
+    fit.assert_called_once_with(auto=True)
+    assert selector.current == 1
+
+
 def test_start_analysis_auto_processes_all_peaks():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
