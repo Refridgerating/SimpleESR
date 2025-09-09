@@ -556,6 +556,7 @@ class SpanPeakSelector:
         self.baseline_btn: tk.Button | ttk.Button | None = None
         self.compare_btn: tk.Button | ttk.Button | None = None
         self.compare_tree: ttk.Treeview | None = None
+        self.batch_tree: ttk.Treeview | None = None
         self.trace_combo: ttk.Combobox | None = None
         self.plot_frame: tk.Frame | None = None
         self.control_frame: tk.Frame | None = None
@@ -567,6 +568,7 @@ class SpanPeakSelector:
         self.delete_btn: tk.Button | ttk.Button | None = None
         self.g_btn: tk.Button | ttk.Button | None = None
         self.area_btn: tk.Button | ttk.Button | None = None
+        self.batch_btn: tk.Button | ttk.Button | None = None
         self.undo_btn: tk.Button | ttk.Button | None = None
         self._history: list[dict[str, object]] = []
         # Keep track of which peak (1 or 2) the user is analysing.
@@ -1461,6 +1463,61 @@ class SpanPeakSelector:
         messagebox.showinfo("Area Integral", "\n".join(lines))
 
     # ------------------------------------------------------------------
+    def batch_process(self) -> None:
+        """Automatically analyse all loaded spectra with progress feedback."""
+
+        if not self.spectra:
+            return
+
+        total = len(self.spectra)
+        progress_win = None
+        progress_bar = None
+        if self.root is not None:
+            try:
+                progress_win = tk.Toplevel(self.root)
+                progress_win.title("Batch Process")
+                tk.Label(progress_win, text="Processing spectra...").pack(padx=10, pady=10)
+                progress_bar = ttk.Progressbar(
+                    progress_win, orient=tk.HORIZONTAL, length=300, mode="determinate"
+                )
+                progress_bar.pack(padx=10, pady=(0, 10))
+                progress_bar["value"] = 0
+            except Exception:
+                progress_win = None
+                progress_bar = None
+
+        for i, spec in enumerate(self.spectra):
+            self.current = i
+            self.spectrum = spec
+            self.results = self.results_all[i]
+            self.lorentz_results = self.lorentz_all[i]
+            self.ranges = self.ranges_all[i]
+            self.auto_peaks = self.auto_peaks_all[i]
+            self.abs_peaks = self.abs_peaks_all[i]
+            try:
+                self.peak_finder()
+                self.start_peak_to_peak(auto=True)
+                self.start_analysis(auto=True)
+                self.fit_lorentzian(auto=True)
+            except Exception as exc:
+                messagebox.showerror("Batch Process", str(exc))
+            if progress_bar is not None:
+                progress_bar["value"] = (i + 1) / total * 100.0
+                progress_win.update_idletasks()
+
+        if progress_win is not None:
+            progress_win.destroy()
+
+        self.current = 0
+        self.spectrum = self.spectra[0]
+        self.results = self.results_all[0]
+        self.lorentz_results = self.lorentz_all[0]
+        self.ranges = self.ranges_all[0]
+        self.auto_peaks = self.auto_peaks_all[0]
+        self.abs_peaks = self.abs_peaks_all[0]
+        self._refresh_tables()
+
+    # ------------------------------------------------------------------
     def _get_baseline_options(self) -> tuple[bool, bool] | None:
         """Return user-selected baseline options.
 
@@ -1862,6 +1919,43 @@ class SpanPeakSelector:
                         g_str,
                     ),
                 )
+
+        self._update_batch_table()
+
+    def _update_batch_table(self) -> None:
+        """Populate the batch comparison table with H_res and FWHM values."""
+
+        if self.batch_tree is None or not hasattr(self.batch_tree, "insert"):
+            return
+
+        for item in self.batch_tree.get_children():
+            self.batch_tree.delete(item)
+
+        for label, res_list, lor_list in zip(
+            self.labels, self.results_all, self.lorentz_all
+        ):
+            fwhm_vals: dict[int, float] = {}
+            for r in res_list:
+                if r.get("analysis") == "FWHM":
+                    try:
+                        fwhm_vals[int(r.get("peak", 0))] = float(r.get("width", 0.0))
+                    except Exception:
+                        continue
+            hres_vals: dict[int, float] = {}
+            for r in lor_list:
+                if r.get("analysis") == "Lorentzian":
+                    try:
+                        hres_vals[int(r.get("peak", 0))] = float(r.get("h_res", 0.0))
+                    except Exception:
+                        continue
+
+            row = [label]
+            for peak in (1, 2):
+                h = hres_vals.get(peak)
+                fwhm = fwhm_vals.get(peak)
+                row.append(f"{h:.3f}" if h is not None else "")
+                row.append(f"{fwhm:.3f}" if fwhm is not None else "")
+            self.batch_tree.insert("", tk.END, values=row)
 
     def _format_metadata(self, meta: dict[str, object] | None) -> str:
         """Return a human readable string for the acquisition metadata."""
@@ -2486,6 +2580,13 @@ class SpanPeakSelector:
             **button_kwargs,
         )
 
+        self.batch_btn = ButtonCls(
+            button_row3,
+            text="Batch Process",
+            command=self.batch_process,
+            **button_kwargs,
+        )
+
         self.undo_btn = ButtonCls(
             button_row3,
             text="Undo",
@@ -2583,6 +2684,27 @@ class SpanPeakSelector:
             self.compare_tree.heading(col, text=text)
             self.compare_tree.column(col, anchor=tk.CENTER)
         self.compare_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
+
+        batch_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
+        batch_frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(
+            batch_frame, text="Batch Results", font=("TkDefaultFont", 10, "bold")
+        ).pack(anchor="w", padx=5, pady=(5, 0))
+        batch_cols = ("trace", "h1", "f1", "h2", "f2")
+        self.batch_tree = ttk.Treeview(
+            batch_frame, columns=batch_cols, show="headings", height=6
+        )
+        batch_headings = {
+            "trace": "Trace",
+            "h1": "H_res P1",
+            "f1": "FWHM P1",
+            "h2": "H_res P2",
+            "f2": "FWHM P2",
+        }
+        for col, text in batch_headings.items():
+            self.batch_tree.heading(col, text=text)
+            self.batch_tree.column(col, anchor=tk.CENTER)
+        self.batch_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
         # Ensure the tables reflect any results already calculated before the GUI
         self._refresh_tables()
