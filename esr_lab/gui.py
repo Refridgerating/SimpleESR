@@ -24,6 +24,7 @@ except Exception:  # pragma: no cover - handled at runtime
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib import colors as mcolors
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
@@ -97,22 +98,48 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         get_active_index: Callable[[], int] | None = None,
         update_legend: Callable[[], None] | None = None,
         set_label: Callable[[int, str], None] | None = None,
+        get_trace_line: Callable[[int], Line2D | None] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(canvas, window, **kwargs)
         self.get_active_index = get_active_index or (lambda: 0)
         self.update_legend_callback = update_legend
         self.set_label_callback = set_label
+        self.get_trace_line = get_trace_line
+        # Keep a reference to the edit dialog so it isn't GC'd and can be reused
+        self._edit_dialog: tk.Toplevel | None = None
 
     def update_legend(self) -> None:
         if self.update_legend_callback:
             self.update_legend_callback()
 
     def _get_selected_line(self, ax):
+        """Return the Line2D corresponding to the active trace.
+
+        Prefer an explicit callback from the embedding app. Fallback to
+        selecting among lines tagged as trace via ``gid=='trace'``. As a last
+        resort, use the positional index in ``ax.lines``.
+        """
+
         idx = self.get_active_index()
+        # Prefer explicit callback if provided
+        if callable(self.get_trace_line):
+            try:
+                line = self.get_trace_line(idx)
+                if isinstance(line, Line2D):
+                    return line
+            except Exception:
+                pass
+
+        # Fallback: consider only lines marked as traces
+        trace_lines = [ln for ln in getattr(ax, "lines", []) if getattr(ln, "get_gid", lambda: None)() == "trace"]
+        if trace_lines and 0 <= idx < len(trace_lines):
+            return trace_lines[idx]
+
+        # Last resort: positional access into ax.lines
         if ax.lines and 0 <= idx < len(ax.lines):
             return ax.lines[idx]
-        return ax.lines[0] if ax.lines else None
+        return ax.lines[0] if getattr(ax, "lines", None) else None
 
     def edit_parameters(self) -> None:
         """Open a small Tk dialog to edit basic plot parameters.
@@ -131,8 +158,40 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         ax = axes[0]
 
-        dialog = tk.Toplevel(self)
+        # Reuse the existing dialog if it is still open
+        try:
+            if self._edit_dialog is not None and int(self._edit_dialog.winfo_exists()):
+                try:
+                    self._edit_dialog.lift()
+                    self._edit_dialog.focus_set()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            self._edit_dialog = None
+
+        # Create a new dialog; parent it to the top-level window hosting the canvas
+        try:
+            master = self.canvas.get_tk_widget().winfo_toplevel()
+        except Exception:
+            master = self
+        dialog = tk.Toplevel(master)
         dialog.title("Edit Plot")
+
+        # Track dialog so it survives while open
+        self._edit_dialog = dialog
+
+        def _on_close() -> None:
+            try:
+                dialog.destroy()
+            finally:
+                self._edit_dialog = None
+
+            
+        try:
+            dialog.protocol("WM_DELETE_WINDOW", _on_close)
+        except Exception:
+            pass
 
         # Helper to create a labelled entry
         def add_entry(row: int, label: str, initial: str) -> tk.Entry:
@@ -156,7 +215,15 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         lw_init = line.get_linewidth() if line is not None else 1.0
         lw_ent = add_entry(7, "Line width", f"{lw_init}")
 
-        color_init = line.get_color() if line is not None else ""
+        # Prepare a Tk-compatible initial color value.
+        def _to_hex_safe(c: object) -> str:
+            try:
+                rgba = mcolors.to_rgba(c)  # accepts many MPL color specs (incl. 'C0')
+                return mcolors.to_hex(rgba)
+            except Exception:
+                return ""
+
+        color_init = _to_hex_safe(line.get_color()) if line is not None else ""
         tk.Label(dialog, text="Line color").grid(row=8, column=0, sticky="e")
         color_frame = tk.Frame(dialog)
         color_frame.grid(row=8, column=1, padx=5, pady=2, sticky="w")
@@ -164,18 +231,23 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         color_ent.insert(0, color_init)
         color_ent.grid(row=0, column=0)
 
-        preview = tk.Canvas(color_frame, width=20, height=20, bg=color_init)
+        # Some color strings are not valid Tk colors; guard preview creation.
+        try:
+            preview = tk.Canvas(color_frame, width=20, height=20, bg=color_init)
+        except Exception:
+            preview = tk.Canvas(color_frame, width=20, height=20)
         preview.grid(row=0, column=1, padx=5)
 
         def choose_color() -> None:
             """Open a color chooser and update the preview on success."""
-
             color = None
             try:
-                color = colorchooser.askcolor(color_ent.get())[1]
+                color = colorchooser.askcolor(
+                    initialcolor=color_ent.get(), parent=dialog, title="Choose Line Color"
+                )[1]
             except tk.TclError:
                 try:
-                    color = colorchooser.askcolor()[1]
+                    color = colorchooser.askcolor(parent=dialog)[1]
                 except tk.TclError:
                     color = None
             if color:
@@ -198,9 +270,13 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         def _update_preview(*_args: object) -> None:
             color_val = color_ent.get().strip()
             try:
+                # Accept raw hex or known color names; ignore invalid ones
                 preview.config(bg=color_val)
             except tk.TclError:
-                pass
+                try:
+                    preview.config(bg=_to_hex_safe(color_val))
+                except Exception:
+                    pass
 
         color_ent.bind("<KeyRelease>", _update_preview)
 
@@ -211,7 +287,10 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         marker_init = line.get_marker() if line is not None else "None"
         marker_var = tk.StringVar(value=marker_init)
         markers = ["None", "o", "s", "^", "D", "*", "x", "+"]
-        tk.OptionMenu(dialog, marker_var, *markers).grid(row=10, column=1, sticky="w")
+        # Ensure the option menu honours the initial marker selection
+        tk.OptionMenu(dialog, marker_var, marker_var.get(), *markers).grid(
+            row=10, column=1, sticky="w"
+        )
 
         # Scale selection
         tk.Label(dialog, text="X scale").grid(row=11, column=0, sticky="e")
@@ -260,7 +339,20 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
                 color_val = color_ent.get().strip()
                 if color_val:
-                    line.set_color(color_val)
+                    try:
+                        rgba = mcolors.to_rgba(color_val)
+                        line.set_color(rgba)
+                        # Keep marker colors consistent if markers are used
+                        mk = line.get_marker()
+                        if mk not in (None, "", "None"):
+                            line.set_markerfacecolor(rgba)
+                            line.set_markeredgecolor(rgba)
+                    except Exception:
+                        # Fallback to raw string; if MPL accepts it, fine
+                        try:
+                            line.set_color(color_val)
+                        except Exception:
+                            pass
 
                 marker_val = marker_var.get()
                 line.set_marker("" if marker_val == "None" else marker_val)
@@ -306,11 +398,11 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
                 row=17, column=0, pady=5
             )
             ttk.Button(
-                dialog, text="Close", command=dialog.destroy, style="Compact.TButton"
+                dialog, text="Close", command=_on_close, style="Compact.TButton"
             ).grid(row=17, column=1, pady=5)
         except Exception:
             tk.Button(dialog, text="Apply", command=apply).grid(row=17, column=0, pady=5)
-            tk.Button(dialog, text="Close", command=dialog.destroy).grid(
+            tk.Button(dialog, text="Close", command=_on_close).grid(
                 row=17, column=1, pady=5
             )
 
@@ -1136,6 +1228,10 @@ class SpanPeakSelector:
         residuals = stats["residuals"]
         fit = _model(field, h_res, delta, A, B)
         (line,) = self.ax.plot(field, fit, label=f"Lorentzian fit at {h_res:.3f}")
+        try:
+            line.set_gid("fit")
+        except Exception:
+            pass
         self.ax.figure.canvas.draw_idle()
 
         res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
@@ -1796,6 +1892,10 @@ class SpanPeakSelector:
             absorption,
             label=label,
         )
+        try:
+            line.set_gid("trace")
+        except Exception:
+            pass
         self.trace_lines.append(line)
         self.spectra.append(
             ESRSpectrum(
@@ -2143,6 +2243,102 @@ class SpanPeakSelector:
         self._rescale()
 
     # ------------------------------------------------------------------
+    def _append_spectrum(self, spectrum: ESRSpectrum, label: str) -> None:
+        """Append a new spectrum to the plot and UI dynamically.
+
+        This mirrors the logic used by integration and fitting to keep all
+        per-trace state vectors in sync and the controls up to date.
+        """
+
+        if self.ax is None:
+            return
+
+        # Plot the new trace
+        (line,) = self.ax.plot(spectrum.field, spectrum.intensity, label=label)
+        try:
+            line.set_gid("trace")
+        except Exception:
+            pass
+        self.trace_lines.append(line)
+
+        # Append to data/model lists
+        self.spectra.append(spectrum)
+        self.labels.append(label)
+        self.results_all.append([])
+        self.lorentz_all.append([])
+        self.ranges_all.append([])
+        self.auto_peaks_all.append([])
+        self.abs_peaks_all.append([])
+
+        # If the combobox/toggles are not present yet, create them; otherwise, extend
+        if (
+            self.trace_combo is None
+            and self.control_frame is not None
+            and self.root is not None
+        ):
+            self.trace_var = tk.StringVar(value=self.labels[0])
+            self.trace_combo = ttk.Combobox(
+                self.control_frame,
+                textvariable=self.trace_var,
+                values=self.labels,
+                state="readonly",
+            )
+            self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            try:
+                self.delete_btn = ttk.Button(
+                    self.control_frame,
+                    text="Delete Trace",
+                    command=self.delete_trace,
+                    style="Compact.TButton",
+                )
+            except Exception:
+                self.delete_btn = tk.Button(
+                    self.control_frame, text="Delete Trace", command=self.delete_trace
+                )
+            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            self.toggle_frame = tk.Frame(self.control_frame)
+            self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+            tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
+            self.trace_vars = []
+            for i, lbl in enumerate(self.labels):
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=lbl,
+                    variable=var,
+                    command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+        else:
+            if self.trace_combo is not None and self.trace_var is not None:
+                self.trace_combo["values"] = self.labels
+            if self.delete_btn is not None:
+                self.delete_btn.config(
+                    state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED
+                )
+            if self.toggle_frame is not None:
+                var = tk.BooleanVar(value=True)
+                idx = len(self.trace_lines) - 1
+                chk = tk.Checkbutton(
+                    self.toggle_frame,
+                    text=label,
+                    variable=var,
+                    command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
+                )
+                chk.pack(anchor="w")
+                self.trace_vars.append(var)
+
+        # Keep UI consistent
+        if self.delete_btn is not None:
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
+        self.update_legend()
+        self._rescale()
+
+    # ------------------------------------------------------------------
     def update_legend(self) -> None:
         """Redraw the legend to reflect current line styles."""
 
@@ -2207,11 +2403,29 @@ class SpanPeakSelector:
 
     # ------------------------------------------------------------------
     def _open_file(self) -> None:
-        """Placeholder callback for the File menu."""
+        """Open one or more CSV files and add them as new traces."""
         try:
-            filedialog.askopenfilename()
+            paths = filedialog.askopenfilenames(
+                title="Open ESR CSV File(s)",
+                filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+            )
         except Exception:
-            pass
+            paths = []
+
+        if not paths:
+            return
+
+        for fp in paths:
+            try:
+                p = Path(fp)
+                spec = ESRLoader.load_csv(p)
+                label = p.name
+                self._append_spectrum(spec, label)
+            except Exception as exc:
+                try:
+                    messagebox.showerror("Open", f"Failed to load {fp}: {exc}")
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     def _view_settings(self) -> None:
@@ -2480,6 +2694,10 @@ class SpanPeakSelector:
         self.trace_lines = []
         for spec in self.spectra:
             line, = self.ax.plot(spec.field, spec.intensity)
+            try:
+                line.set_gid("trace")
+            except Exception:
+                pass
             self.trace_lines.append(line)
         self.ax.set_xlabel("Magnetic Field")
         self.ax.set_ylabel("Intensity")
@@ -2492,6 +2710,7 @@ class SpanPeakSelector:
             get_active_index=lambda: self.current,
             update_legend=self.update_legend,
             set_label=self._set_label,
+            get_trace_line=lambda i: self.trace_lines[i] if 0 <= i < len(self.trace_lines) else None,
             pack_toolbar=False,
         )
         toolbar.update()
