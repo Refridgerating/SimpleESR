@@ -211,9 +211,47 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         xmax_ent = add_entry(4, "X max", f"{xmax}")
         ymin_ent = add_entry(5, "Y min", f"{ymin}")
         ymax_ent = add_entry(6, "Y max", f"{ymax}")
-        line = self._get_selected_line(ax)
+
+        # Gather editable trace lines and allow user to choose which to edit
+        trace_lines = [
+            ln for ln in getattr(ax, "lines", []) if getattr(ln, "get_gid", lambda: None)() == "trace"
+        ]
+        display_names: list[str] = []
+        for i, ln in enumerate(trace_lines, start=1):
+            try:
+                nm = ln.get_label()
+            except Exception:
+                nm = f"Trace {i}"
+            display_names.append(f"{i}: {nm}")
+
+        sel_idx = 0
+        try:
+            active = max(0, int(self.get_active_index()))
+            if trace_lines:
+                sel_idx = min(active, len(trace_lines) - 1)
+        except Exception:
+            sel_idx = 0
+
+        tk.Label(dialog, text="Trace").grid(row=7, column=0, sticky="e")
+        trace_var = tk.StringVar(value=(display_names[sel_idx] if display_names else ""))
+        try:
+            trace_choice = ttk.Combobox(dialog, values=display_names, textvariable=trace_var, state="readonly")
+            trace_choice.grid(row=7, column=1, padx=5, pady=2, sticky="w")
+        except Exception:
+            trace_choice = tk.OptionMenu(dialog, trace_var, *(display_names or [""]))
+            trace_choice.grid(row=7, column=1, padx=5, pady=2, sticky="w")
+
+        def _selected_index() -> int:
+            name = trace_var.get()
+            try:
+                # Names are formatted as "<i>: <label>"
+                return max(0, min(len(display_names) - 1, int(name.split(":", 1)[0]) - 1))
+            except Exception:
+                return 0
+
+        line = trace_lines[sel_idx] if trace_lines else None
         lw_init = line.get_linewidth() if line is not None else 1.0
-        lw_ent = add_entry(7, "Line width", f"{lw_init}")
+        lw_ent = add_entry(8, "Line width", f"{lw_init}")
 
         # Prepare a Tk-compatible initial color value.
         def _to_hex_safe(c: object) -> str:
@@ -224,9 +262,9 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
                 return ""
 
         color_init = _to_hex_safe(line.get_color()) if line is not None else ""
-        tk.Label(dialog, text="Line color").grid(row=8, column=0, sticky="e")
+        tk.Label(dialog, text="Line color").grid(row=9, column=0, sticky="e")
         color_frame = tk.Frame(dialog)
-        color_frame.grid(row=8, column=1, padx=5, pady=2, sticky="w")
+        color_frame.grid(row=9, column=1, padx=5, pady=2, sticky="w")
         color_ent = tk.Entry(color_frame)
         color_ent.insert(0, color_init)
         color_ent.grid(row=0, column=0)
@@ -281,33 +319,72 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         color_ent.bind("<KeyRelease>", _update_preview)
 
         legend_init = line.get_label() if line is not None else ""
-        legend_ent = add_entry(9, "Legend", legend_init)
+        legend_ent = add_entry(10, "Trace label", legend_init)
 
-        tk.Label(dialog, text="Marker").grid(row=10, column=0, sticky="e")
+        tk.Label(dialog, text="Marker").grid(row=11, column=0, sticky="e")
         marker_init = line.get_marker() if line is not None else "None"
         marker_var = tk.StringVar(value=marker_init)
         markers = ["None", "o", "s", "^", "D", "*", "x", "+"]
         # Ensure the option menu honours the initial marker selection
         tk.OptionMenu(dialog, marker_var, marker_var.get(), *markers).grid(
-            row=10, column=1, sticky="w"
+            row=11, column=1, sticky="w"
         )
 
         # Scale selection
-        tk.Label(dialog, text="X scale").grid(row=11, column=0, sticky="e")
+        tk.Label(dialog, text="X scale").grid(row=12, column=0, sticky="e")
         xscale_var = tk.StringVar(value=ax.get_xscale())
-        tk.OptionMenu(dialog, xscale_var, "linear", "log").grid(row=11, column=1, sticky="w")
+        tk.OptionMenu(dialog, xscale_var, "linear", "log").grid(row=12, column=1, sticky="w")
 
-        tk.Label(dialog, text="Y scale").grid(row=12, column=0, sticky="e")
+        tk.Label(dialog, text="Y scale").grid(row=13, column=0, sticky="e")
         yscale_var = tk.StringVar(value=ax.get_yscale())
-        tk.OptionMenu(dialog, yscale_var, "linear", "log").grid(row=12, column=1, sticky="w")
+        tk.OptionMenu(dialog, yscale_var, "linear", "log").grid(row=13, column=1, sticky="w")
 
-        xticks_ent = add_entry(13, "X ticks", ", ".join(map(str, ax.get_xticks())))
-        yticks_ent = add_entry(14, "Y ticks", ", ".join(map(str, ax.get_yticks())))
+        xticks_ent = add_entry(14, "X ticks", ", ".join(map(str, ax.get_xticks())))
+        yticks_ent = add_entry(15, "Y ticks", ", ".join(map(str, ax.get_yticks())))
 
         major_var = tk.BooleanVar(value=ax.xaxis._major_tick_kw.get("gridOn", False))
-        tk.Checkbutton(dialog, text="Major grid", variable=major_var).grid(row=15, column=0, columnspan=2, sticky="w")
+        tk.Checkbutton(dialog, text="Major grid", variable=major_var).grid(row=16, column=0, columnspan=2, sticky="w")
         minor_var = tk.BooleanVar(value=ax.xaxis._minor_tick_kw.get("gridOn", False))
-        tk.Checkbutton(dialog, text="Minor grid", variable=minor_var).grid(row=16, column=0, columnspan=2, sticky="w")
+        tk.Checkbutton(dialog, text="Minor grid", variable=minor_var).grid(row=17, column=0, columnspan=2, sticky="w")
+
+        def _refresh_line_fields(*_args: object) -> None:
+            idx = _selected_index()
+            ln = trace_lines[idx] if 0 <= idx < len(trace_lines) else None
+            if ln is None:
+                return
+            try:
+                lw_ent.delete(0, tk.END)
+                lw_ent.insert(0, f"{ln.get_linewidth()}")
+            except Exception:
+                pass
+            try:
+                cval = _to_hex_safe(ln.get_color())
+                color_ent.delete(0, tk.END)
+                color_ent.insert(0, cval)
+                preview.config(bg=cval)
+            except Exception:
+                pass
+            try:
+                legend_ent.delete(0, tk.END)
+                legend_ent.insert(0, ln.get_label())
+            except Exception:
+                pass
+            try:
+                current_marker = ln.get_marker() or "None"
+                if current_marker == "":
+                    current_marker = "None"
+                marker_var.set(current_marker)
+            except Exception:
+                pass
+
+        # Update line-specific fields when the selected trace changes
+        try:
+            trace_var.trace_add("write", _refresh_line_fields)  # type: ignore[attr-defined]
+        except Exception:
+            try:
+                trace_var.trace("w", _refresh_line_fields)  # type: ignore[misc]
+            except Exception:
+                pass
 
         def apply() -> None:
             try:
@@ -329,7 +406,12 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             ax.set_xlabel(xlabel_ent.get())
             ax.set_ylabel(ylabel_ent.get())
 
-            line = self._get_selected_line(ax)
+            # Apply line-specific edits to the selected trace
+            try:
+                idx = _selected_index()
+            except Exception:
+                idx = 0
+            line = trace_lines[idx] if 0 <= idx < len(trace_lines) else None
             if line is not None:
                 try:
                     lw = float(lw_ent.get())
@@ -361,11 +443,9 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
                 line.set_label(legend_text)
                 if self.set_label_callback is not None:
                     try:
-                        idx = self.get_active_index()
-                    except Exception:
-                        idx = None
-                    if idx is not None:
                         self.set_label_callback(idx, legend_text)
+                    except Exception:
+                        pass
                 self.update_legend()
 
             ax.set_xscale(xscale_var.get())
@@ -395,15 +475,15 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         try:
             ttk.Button(dialog, text="Apply", command=apply, style="Compact.TButton").grid(
-                row=17, column=0, pady=5
+                row=18, column=0, pady=5
             )
             ttk.Button(
                 dialog, text="Close", command=_on_close, style="Compact.TButton"
-            ).grid(row=17, column=1, pady=5)
+            ).grid(row=18, column=1, pady=5)
         except Exception:
-            tk.Button(dialog, text="Apply", command=apply).grid(row=17, column=0, pady=5)
+            tk.Button(dialog, text="Apply", command=apply).grid(row=18, column=0, pady=5)
             tk.Button(dialog, text="Close", command=_on_close).grid(
-                row=17, column=1, pady=5
+                row=18, column=1, pady=5
             )
 
 
@@ -570,8 +650,8 @@ class SpanPeakSelector:
     versions.
     """
 
-    def __init__(self, spectrum, labels: list[str] | None = None) -> None:
-        """Initialise the selector with one or more spectra.
+    def __init__(self, spectrum=None, labels: list[str] | None = None) -> None:
+        """Initialise the selector with zero, one, or more spectra.
 
         Parameters
         ----------
@@ -581,10 +661,11 @@ class SpanPeakSelector:
             spectrum which is still supported for backwards compatibility.
         """
 
-        # Normalise ``spectrum`` to a list so the rest of the implementation can
-        # treat all inputs uniformly.  Existing tests pass a single spectrum
-        # which results in a one-element list here.
-        if isinstance(spectrum, list):
+        # Normalise ``spectrum`` so the rest of the implementation can
+        # treat all inputs uniformly. Allow starting with no data loaded.
+        if spectrum is None:
+            self.spectra = []
+        elif isinstance(spectrum, list):
             self.spectra = spectrum
         else:
             self.spectra = [spectrum]
@@ -594,7 +675,7 @@ class SpanPeakSelector:
         else:
             self.labels = [f"Trace {i + 1}" for i in range(len(self.spectra))]
         self.current = 0
-        self.spectrum = self.spectra[self.current]
+        self.spectrum = self.spectra[0] if self.spectra else None
 
         # Keep analysis results for each loaded spectrum separately.  ``results``
         # and ``lorentz_results`` always refer to the currently selected trace so
@@ -605,26 +686,32 @@ class SpanPeakSelector:
         self.lorentz_all: list[list[dict[str, float | str | int]]] = [
             [] for _ in self.spectra
         ]
-        self.results = self.results_all[self.current]
-        self.lorentz_results = self.lorentz_all[self.current]
+        self.results = self.results_all[self.current] if self.results_all else []
+        self.lorentz_results = (
+            self.lorentz_all[self.current] if self.lorentz_all else []
+        )
 
         # Individual span selections per trace
         self.ranges_all: list[list[tuple[float, float]]] = [
             [] for _ in self.spectra
         ]
-        self.ranges = self.ranges_all[self.current]
+        self.ranges = self.ranges_all[self.current] if self.ranges_all else []
 
         # Automatically detected peak indices per trace
         self.auto_peaks_all: list[list[tuple[int, int]]] = [
             [] for _ in self.spectra
         ]
-        self.auto_peaks = self.auto_peaks_all[self.current]
+        self.auto_peaks = (
+            self.auto_peaks_all[self.current] if self.auto_peaks_all else []
+        )
 
         # Automatically detected absorption peak indices per trace
         self.abs_peaks_all: list[list[int]] = [
             [] for _ in self.spectra
         ]
-        self.abs_peaks = self.abs_peaks_all[self.current]
+        self.abs_peaks = (
+            self.abs_peaks_all[self.current] if self.abs_peaks_all else []
+        )
 
         # Plot lines and visibility state for each spectrum
         self.trace_lines: list[Line2D] = []
@@ -789,6 +876,9 @@ class SpanPeakSelector:
             "auto_peaks_all": copy.deepcopy(self.auto_peaks_all),
             "abs_peaks_all": copy.deepcopy(self.abs_peaks_all),
             "current": self.current,
+            "visibility": [
+                bool(getattr(ln, "get_visible", lambda: True)()) for ln in getattr(self, "trace_lines", [])
+            ],
         }
         self._history.append(state)
         if self.undo_btn is not None:
@@ -820,17 +910,26 @@ class SpanPeakSelector:
             for sp, lbl in zip(self.spectra, self.labels):
                 (line,) = self.ax.plot(sp.field, sp.intensity, label=lbl)
                 self.trace_lines.append(line)
+            # Restore previous visibility per trace if available
+            vis = state.get("visibility", [])
+            for i, line in enumerate(self.trace_lines):
+                try:
+                    line.set_visible(bool(vis[i]))
+                except Exception:
+                    pass
             self.ax.figure.canvas.draw_idle()
         if self.trace_combo is not None and self.trace_var is not None:
             self.trace_combo["values"] = self.labels
             self.trace_var.set(self.labels[self.current])
         if self.toggle_frame is not None:
+            # Preserve existing visibility states for remaining traces
+            vis_states = [ln.get_visible() for ln in self.trace_lines]
             for child in self.toggle_frame.winfo_children():
                 child.destroy()
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
             self.trace_vars = []
-            for i, lbl in enumerate(self.labels):
-                var = tk.BooleanVar(value=True)
+            for i, (lbl, visible) in enumerate(zip(self.labels, vis_states)):
+                var = tk.BooleanVar(value=bool(visible))
                 chk = tk.Checkbutton(
                     self.toggle_frame,
                     text=lbl,
@@ -840,7 +939,7 @@ class SpanPeakSelector:
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
         if self.delete_btn is not None:
-            state_str = tk.NORMAL if len(self.spectra) > 1 else tk.DISABLED
+            state_str = tk.NORMAL if len(self.spectra) > 0 else tk.DISABLED
             self.delete_btn.config(state=state_str)
         if self.undo_btn is not None and not self._history:
             self.undo_btn.config(state=tk.DISABLED)
@@ -848,6 +947,7 @@ class SpanPeakSelector:
         self._update_metadata_display()
         self.update_legend()
         self._rescale()
+        self._update_button_states()
 
     # ------------------------------------------------------------------
     def start_analysis(
@@ -913,7 +1013,8 @@ class SpanPeakSelector:
                 lines.append(
                     f"Peak {self.current_peak}: pos={pos_field:.3f}, neg={neg_field:.3f}, {self.analysis_label}={width:.3f}"
                 )
-            if lines:
+            # Only show summary when not running in silent auto mode
+            if lines and not getattr(self, "_silent_auto", False):
                 messagebox.showinfo("Peak analysis", "\n".join(lines))
             return
 
@@ -943,7 +1044,7 @@ class SpanPeakSelector:
 
         self.start_analysis(calc_peak_to_peak, "\u0394H_pp", auto=auto)
 
-    def peak_finder(self) -> None:
+    def peak_finder(self, auto: bool = False) -> None:
         """Automatically detect peak pairs and store them for analysis.
 
         Temporary markers are drawn on the plot to aid the user in verifying
@@ -957,14 +1058,17 @@ class SpanPeakSelector:
         self.spectrum = self.spectra[self.current]
         self.auto_peaks = self.auto_peaks_all[self.current]
 
-        try:
-            num = simpledialog.askinteger(
-                "Peak Finder", "How many peaks to expect?", initialvalue=4, minvalue=2
-            )
-        except Exception:
+        if auto:
             num = 4
-        if num is None:
-            return
+        else:
+            try:
+                num = simpledialog.askinteger(
+                    "Peak Finder", "How many peaks to expect?", initialvalue=4, minvalue=2
+                )
+            except Exception:
+                num = 4
+            if num is None:
+                return
         try:
             pairs = auto_peak_finder(
                 self.spectrum.field,
@@ -976,49 +1080,51 @@ class SpanPeakSelector:
             messagebox.showerror("Peak Finder", str(exc))
             return
 
-        markers: list[Line2D] = []
-        if self.ax is not None:
-            for p, n in pairs:
-                (pos_marker,) = self.ax.plot(
-                    self.spectrum.field[p],
-                    self.spectrum.intensity[p],
-                    marker="o",
-                    color="red",
-                )
-                (neg_marker,) = self.ax.plot(
-                    self.spectrum.field[n],
-                    self.spectrum.intensity[n],
-                    marker="o",
-                    color="blue",
-                )
-                markers.extend([pos_marker, neg_marker])
-            self.ax.figure.canvas.draw_idle()
+        if not auto:
+            markers: list[Line2D] = []
+            if self.ax is not None:
+                for p, n in pairs:
+                    (pos_marker,) = self.ax.plot(
+                        self.spectrum.field[p],
+                        self.spectrum.intensity[p],
+                        marker="o",
+                        color="red",
+                    )
+                    (neg_marker,) = self.ax.plot(
+                        self.spectrum.field[n],
+                        self.spectrum.intensity[n],
+                        marker="o",
+                        color="blue",
+                    )
+                    markers.extend([pos_marker, neg_marker])
+                self.ax.figure.canvas.draw_idle()
 
-        lines = [
-            (
-                f"Peak {i + 1}: pos={self.spectrum.field[p]:.3f}, "
-                f"neg={self.spectrum.field[n]:.3f}"
+            lines = [
+                (
+                    f"Peak {i + 1}: pos={self.spectrum.field[p]:.3f}, "
+                    f"neg={self.spectrum.field[n]:.3f}"
+                )
+                for i, (p, n) in enumerate(pairs)
+            ]
+            accept = messagebox.askyesno(
+                "Peak Finder", "\n".join(lines) + "\nAccept peaks?"
             )
-            for i, (p, n) in enumerate(pairs)
-        ]
-        accept = messagebox.askyesno(
-            "Peak Finder", "\n".join(lines) + "\nAccept peaks?"
-        )
 
-        for m in markers:
-            m.remove()
-        if self.ax is not None:
-            self.ax.figure.canvas.draw_idle()
+            for m in markers:
+                m.remove()
+            if self.ax is not None:
+                self.ax.figure.canvas.draw_idle()
 
-        if not accept:
-            return
+            if not accept:
+                return
 
         self.auto_peaks.clear()
         self.auto_peaks.extend(pairs)
         self._refresh_tables()
-        messagebox.showinfo("Peak Finder", "Peaks stored for analysis")
+        if not auto:
+            messagebox.showinfo("Peak Finder", "Peaks stored for analysis")
 
-    def peak_finder_absorption(self) -> None:
+    def peak_finder_absorption(self, auto: bool = False) -> None:
         """Locate local maxima in absorption spectra and store them."""
 
         self._save_state()
@@ -1026,14 +1132,17 @@ class SpanPeakSelector:
         self.spectrum = self.spectra[self.current]
         self.abs_peaks = self.abs_peaks_all[self.current]
 
-        try:
-            num = simpledialog.askinteger(
-                "Peak Finder", "How many peaks to expect?", initialvalue=2, minvalue=1
-            )
-        except Exception:
+        if auto:
             num = 2
-        if num is None:
-            return
+        else:
+            try:
+                num = simpledialog.askinteger(
+                    "Peak Finder", "How many peaks to expect?", initialvalue=2, minvalue=1
+                )
+            except Exception:
+                num = 2
+            if num is None:
+                return
         # Locate local maxima in the absorption trace. ``find_peaks`` returns
         # all peak indices which are then ranked by their height to select the
         # most prominent ``num`` peaks.
@@ -1047,38 +1156,40 @@ class SpanPeakSelector:
         peaks.sort()
         peaks = [int(p) for p in peaks]
 
-        markers: list[Line2D] = []
-        if self.ax is not None:
-            for p in peaks:
-                (marker,) = self.ax.plot(
-                    self.spectrum.field[p],
-                    self.spectrum.intensity[p],
-                    marker="o",
-                    color="red",
-                )
-                markers.append(marker)
-            self.ax.figure.canvas.draw_idle()
+        if not auto:
+            markers: list[Line2D] = []
+            if self.ax is not None:
+                for p in peaks:
+                    (marker,) = self.ax.plot(
+                        self.spectrum.field[p],
+                        self.spectrum.intensity[p],
+                        marker="o",
+                        color="red",
+                    )
+                    markers.append(marker)
+                self.ax.figure.canvas.draw_idle()
 
-        lines = [
-            f"Peak {i + 1}: pos={self.spectrum.field[p]:.3f}"
-            for i, p in enumerate(peaks)
-        ]
-        accept = messagebox.askyesno(
-            "Peak Finder", "\n".join(lines) + "\nAccept peaks?"
-        )
+            lines = [
+                f"Peak {i + 1}: pos={self.spectrum.field[p]:.3f}"
+                for i, p in enumerate(peaks)
+            ]
+            accept = messagebox.askyesno(
+                "Peak Finder", "\n".join(lines) + "\nAccept peaks?"
+            )
 
-        for m in markers:
-            m.remove()
-        if self.ax is not None:
-            self.ax.figure.canvas.draw_idle()
+            for m in markers:
+                m.remove()
+            if self.ax is not None:
+                self.ax.figure.canvas.draw_idle()
 
-        if not accept:
-            return
+            if not accept:
+                return
 
         self.abs_peaks.clear()
         self.abs_peaks.extend(peaks)
         self._refresh_tables()
-        messagebox.showinfo("Peak Finder", "Peaks stored for analysis")
+        if not auto:
+            messagebox.showinfo("Peak Finder", "Peaks stored for analysis")
 
     # ------------------------------------------------------------------
     def onselect(self, xmin: float, xmax: float) -> None:
@@ -1169,9 +1280,10 @@ class SpanPeakSelector:
         is_absorption = "absorption" in self.labels[self.current].lower()
         if is_absorption:
             if len(self.abs_peaks) < self.current_peak:
-                self.peak_finder_absorption()
+                self.peak_finder_absorption(auto=auto)
                 if len(self.abs_peaks) < self.current_peak:
-                    messagebox.showwarning("Lorentzian Fit", "No peaks available")
+                    if not auto:
+                        messagebox.showwarning("Lorentzian Fit", "No peaks available")
                     return
             peak_idx = self.abs_peaks[self.current_peak - 1]
             h_res_guess = field[peak_idx]
@@ -1199,9 +1311,10 @@ class SpanPeakSelector:
             param_label = "C"
         else:
             if len(self.auto_peaks) < self.current_peak:
-                self.peak_finder()
+                self.peak_finder(auto=auto)
                 if len(self.auto_peaks) < self.current_peak:
-                    messagebox.showwarning("Lorentzian Fit", "No peaks available")
+                    if not auto:
+                        messagebox.showwarning("Lorentzian Fit", "No peaks available")
                     return
             pos_idx, neg_idx = self.auto_peaks[self.current_peak - 1]
             h_res_guess = (field[pos_idx] + field[neg_idx]) / 2.0
@@ -1364,18 +1477,19 @@ class SpanPeakSelector:
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
-            try:
-                self.delete_btn = ttk.Button(
-                    self.control_frame,
-                    text="Delete Trace",
-                    command=self.delete_trace,
-                    style="Compact.TButton",
-                )
-            except Exception:
-                self.delete_btn = tk.Button(
-                    self.control_frame, text="Delete Trace", command=self.delete_trace
-                )
-            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+            if self.delete_btn is None:
+                try:
+                    self.delete_btn = ttk.Button(
+                        self.control_frame,
+                        text="Delete Trace",
+                        command=self.delete_trace,
+                        style="Compact.TButton",
+                    )
+                except Exception:
+                    self.delete_btn = tk.Button(
+                        self.control_frame, text="Delete Trace", command=self.delete_trace
+                    )
+                self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
 
             self.toggle_frame = tk.Frame(self.control_frame)
             self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -1396,7 +1510,7 @@ class SpanPeakSelector:
                 self.trace_combo["values"] = self.labels
             if self.delete_btn is not None:
                 self.delete_btn.config(
-                    state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED
+                    state=tk.NORMAL if len(self.labels) > 0 else tk.DISABLED
                 )
             if self.toggle_frame is not None:
                 var = tk.BooleanVar(value=True)
@@ -1411,7 +1525,7 @@ class SpanPeakSelector:
                 self.trace_vars.append(var)
 
         if self.delete_btn is not None:
-            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 0 else tk.DISABLED)
 
         self.update_legend()
         self._rescale()
@@ -1490,24 +1604,30 @@ class SpanPeakSelector:
             )
 
     # ------------------------------------------------------------------
-    def calculate_g(self) -> None:
-        """Compute the g-factor for fitted peaks using metadata frequency."""
+    def calculate_g(self, quiet: bool = False) -> None:
+        """Compute the g-factor for fitted peaks using metadata frequency.
+
+        When ``quiet`` is True, suppresses message dialogs.
+        """
 
         if not self.lorentz_results:
-            messagebox.showinfo("Calculate g", "No Lorentzian fits available")
+            if not quiet:
+                messagebox.showinfo("Calculate g", "No Lorentzian fits available")
             return
 
         freq = None
         if self.spectrum.metadata is not None:
             freq = self.spectrum.metadata.get("Frequency")
         if freq is None:
-            messagebox.showinfo("Calculate g", "Frequency metadata not available")
+            if not quiet:
+                messagebox.showinfo("Calculate g", "Frequency metadata not available")
             return
 
         try:
             freq_val = float(freq)
         except Exception:
-            messagebox.showinfo("Calculate g", "Invalid frequency value")
+            if not quiet:
+                messagebox.showinfo("Calculate g", "Invalid frequency value")
             return
 
         lines: list[str] = []
@@ -1518,20 +1638,28 @@ class SpanPeakSelector:
             lines.append(f"Peak {r['peak']}: g={g_val:.3f}")
 
         self._refresh_tables()
-        messagebox.showinfo("Calculate g", "\n".join(lines))
+        if not quiet:
+            messagebox.showinfo("Calculate g", "\n".join(lines))
 
     # ------------------------------------------------------------------
     def analyze_spectra(self) -> None:
         """Run peak finding, linewidth, fitting and g-factor analysis."""
 
         try:
-            self.peak_finder()
+            # Suppress informational popups during automated pipeline
+            self._silent_auto = True
+            self.peak_finder(auto=True)
             self.start_peak_to_peak(auto=True)
             self.start_analysis(auto=True)
             self.fit_lorentzian(auto=True)
-            self.calculate_g()
+            self.calculate_g(quiet=True)
         except Exception as exc:
             messagebox.showerror("Analyze Spectra", str(exc))
+        finally:
+            try:
+                del self._silent_auto
+            except Exception:
+                self._silent_auto = False
 
     # ------------------------------------------------------------------
     def calculate_area(self) -> None:
@@ -1637,7 +1765,7 @@ class SpanPeakSelector:
             self.auto_peaks = self.auto_peaks_all[i]
             self.abs_peaks = self.abs_peaks_all[i]
             try:
-                self.peak_finder()
+                self.peak_finder(auto=True)
                 self.start_peak_to_peak(auto=True)
                 self.start_analysis(auto=True)
                 self.fit_lorentzian(auto=True)
@@ -1820,18 +1948,19 @@ class SpanPeakSelector:
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
-            try:
-                self.delete_btn = ttk.Button(
-                    self.control_frame,
-                    text="Delete Trace",
-                    command=self.delete_trace,
-                    style="Compact.TButton",
-                )
-            except Exception:
-                self.delete_btn = tk.Button(
-                    self.control_frame, text="Delete Trace", command=self.delete_trace
-                )
-            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+            if self.delete_btn is None:
+                try:
+                    self.delete_btn = ttk.Button(
+                        self.control_frame,
+                        text="Delete Trace",
+                        command=self.delete_trace,
+                        style="Compact.TButton",
+                    )
+                except Exception:
+                    self.delete_btn = tk.Button(
+                        self.control_frame, text="Delete Trace", command=self.delete_trace
+                    )
+                self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
 
             self.toggle_frame = tk.Frame(self.control_frame)
             self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -1852,7 +1981,7 @@ class SpanPeakSelector:
                 self.trace_combo["values"] = self.labels
             if self.delete_btn is not None:
                 self.delete_btn.config(
-                    state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED
+                    state=tk.NORMAL if len(self.labels) > 0 else tk.DISABLED
                 )
             if self.toggle_frame is not None:
                 var = tk.BooleanVar(value=True)
@@ -1867,7 +1996,7 @@ class SpanPeakSelector:
                 self.trace_vars.append(var)
 
         if self.delete_btn is not None:
-            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 0 else tk.DISABLED)
 
         self.update_legend()
         self._rescale()
@@ -1926,18 +2055,19 @@ class SpanPeakSelector:
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
 
-            try:
-                self.delete_btn = ttk.Button(
-                    self.control_frame,
-                    text="Delete Trace",
-                    command=self.delete_trace,
-                    style="Compact.TButton",
-                )
-            except Exception:
-                self.delete_btn = tk.Button(
-                    self.control_frame, text="Delete Trace", command=self.delete_trace
-                )
-            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+            if self.delete_btn is None:
+                try:
+                    self.delete_btn = ttk.Button(
+                        self.control_frame,
+                        text="Delete Trace",
+                        command=self.delete_trace,
+                        style="Compact.TButton",
+                    )
+                except Exception:
+                    self.delete_btn = tk.Button(
+                        self.control_frame, text="Delete Trace", command=self.delete_trace
+                    )
+                self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
 
             self.toggle_frame = tk.Frame(self.control_frame)
             self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -1958,7 +2088,7 @@ class SpanPeakSelector:
                 self.trace_combo["values"] = self.labels
             if self.delete_btn is not None:
                 self.delete_btn.config(
-                    state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED
+                    state=tk.NORMAL if len(self.labels) > 0 else tk.DISABLED
                 )
             if self.toggle_frame is not None:
                 var = tk.BooleanVar(value=True)
@@ -1973,7 +2103,7 @@ class SpanPeakSelector:
                 self.trace_vars.append(var)
 
         if self.delete_btn is not None:
-            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 0 else tk.DISABLED)
 
         self.update_legend()
         self._rescale()
@@ -1998,31 +2128,35 @@ class SpanPeakSelector:
         if self.peak_tree is not None:
             for item in self.peak_tree.get_children():
                 self.peak_tree.delete(item)
-            label = self.labels[self.current]
-            idx = 0
-            for i, (p, n) in enumerate(self.auto_peaks):
-                self.peak_tree.insert(
-                    "",
-                    tk.END,
-                    values=(
-                        label,
-                        f"{i + 1}",
-                        f"{self.spectrum.field[p]:.3f}",
-                        f"{self.spectrum.field[n]:.3f}",
-                    ),
-                )
-                idx = i + 1
-            for j, p in enumerate(self.abs_peaks, start=idx + 1):
-                self.peak_tree.insert(
-                    "",
-                    tk.END,
-                    values=(
-                        label,
-                        f"{j}",
-                        f"{self.spectrum.field[p]:.3f}",
+            # Without spectra loaded there is nothing to populate
+            if not self.spectra or self.spectrum is None or not self.labels:
+                pass
+            else:
+                label = self.labels[self.current]
+                idx = 0
+                for i, (p, n) in enumerate(self.auto_peaks):
+                    self.peak_tree.insert(
                         "",
-                    ),
-                )
+                        tk.END,
+                        values=(
+                            label,
+                            f"{i + 1}",
+                            f"{self.spectrum.field[p]:.3f}",
+                            f"{self.spectrum.field[n]:.3f}",
+                        ),
+                    )
+                    idx = i + 1
+                for j, p in enumerate(self.abs_peaks, start=idx + 1):
+                    self.peak_tree.insert(
+                        "",
+                        tk.END,
+                        values=(
+                            label,
+                            f"{j}",
+                            f"{self.spectrum.field[p]:.3f}",
+                            "",
+                        ),
+                    )
 
         if self.tree is not None:
             for item in self.tree.get_children():
@@ -2129,8 +2263,10 @@ class SpanPeakSelector:
 
     def _update_metadata_display(self) -> None:
         """Update the metadata label for the currently selected spectrum."""
-
-        text = self._format_metadata(self.spectrum.metadata)
+        if self.spectrum is None:
+            text = ""
+        else:
+            text = self._format_metadata(self.spectrum.metadata)
         self.metadata_text = text
         if self.meta_label is not None:
             self.meta_label.config(text=text)
@@ -2192,7 +2328,9 @@ class SpanPeakSelector:
     def delete_trace(self) -> None:
         """Remove the currently selected trace."""
 
-        if len(self.spectra) <= 1:
+        # Allow deleting even when only a single spectrum is loaded to clear
+        # the view and return to an empty state.
+        if len(self.spectra) == 0:
             return
 
         self._save_state()
@@ -2222,20 +2360,39 @@ class SpanPeakSelector:
                 )
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
-        if self.current >= len(self.spectra):
-            self.current = len(self.spectra) - 1
-        self.spectrum = self.spectra[self.current]
-        self.results = self.results_all[self.current]
-        self.lorentz_results = self.lorentz_all[self.current]
-        self.ranges = self.ranges_all[self.current]
-        self.auto_peaks = self.auto_peaks_all[self.current]
-        self.abs_peaks = self.abs_peaks_all[self.current]
-        if self.trace_combo is not None and self.trace_var is not None:
-            self.trace_combo["values"] = self.labels
-            self.trace_var.set(self.labels[self.current])
+        if len(self.spectra) == 0:
+            # No spectra left – reset state
+            self.current = 0
+            self.spectrum = None
+            self.results = []
+            self.lorentz_results = []
+            self.ranges = []
+            self.auto_peaks = []
+            self.abs_peaks = []
+            if self.trace_combo is not None and self.trace_var is not None:
+                self.trace_combo["values"] = []
+                try:
+                    self.trace_var.set("")
+                except Exception:
+                    pass
+        else:
+            if self.current >= len(self.spectra):
+                self.current = len(self.spectra) - 1
+            self.spectrum = self.spectra[self.current]
+            self.results = self.results_all[self.current]
+            self.lorentz_results = self.lorentz_all[self.current]
+            self.ranges = self.ranges_all[self.current]
+            self.auto_peaks = self.auto_peaks_all[self.current]
+            self.abs_peaks = self.abs_peaks_all[self.current]
+            if self.trace_combo is not None and self.trace_var is not None:
+                self.trace_combo["values"] = self.labels
+                try:
+                    self.trace_var.set(self.labels[self.current])
+                except Exception:
+                    pass
         if self.delete_btn is not None:
             self.delete_btn.config(
-                state=tk.NORMAL if len(self.spectra) > 1 else tk.DISABLED
+                state=tk.NORMAL if len(self.spectra) > 0 else tk.DISABLED
             )
         self._refresh_tables()
         self._update_metadata_display()
@@ -2318,7 +2475,7 @@ class SpanPeakSelector:
                 self.trace_combo["values"] = self.labels
             if self.delete_btn is not None:
                 self.delete_btn.config(
-                    state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED
+                    state=tk.NORMAL if len(self.labels) > 0 else tk.DISABLED
                 )
             if self.toggle_frame is not None:
                 var = tk.BooleanVar(value=True)
@@ -2334,9 +2491,10 @@ class SpanPeakSelector:
 
         # Keep UI consistent
         if self.delete_btn is not None:
-            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 1 else tk.DISABLED)
+            self.delete_btn.config(state=tk.NORMAL if len(self.labels) > 0 else tk.DISABLED)
         self.update_legend()
         self._rescale()
+        self._update_button_states()
 
     # ------------------------------------------------------------------
     def update_legend(self) -> None:
@@ -2362,6 +2520,51 @@ class SpanPeakSelector:
                 leg.remove()
 
         self.ax.figure.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
+    def _update_button_states(self) -> None:
+        """Enable/disable controls depending on whether spectra are loaded."""
+
+        has_data = len(self.spectra) > 0
+        state = tk.NORMAL if has_data else tk.DISABLED
+
+        to_toggle = [
+            getattr(self, "analyze_btn", None),
+            getattr(self, "analyse_btn", None),
+            getattr(self, "dhpp_btn", None),
+            getattr(self, "find_btn", None),
+            getattr(self, "find_abs_btn", None),
+            getattr(self, "fit_btn", None),
+            getattr(self, "integrate_btn", None),
+            getattr(self, "baseline_btn", None),
+            getattr(self, "g_btn", None),
+            getattr(self, "area_btn", None),
+            getattr(self, "batch_btn", None),
+        ]
+        for btn in to_toggle:
+            try:
+                if btn is not None:
+                    btn.config(state=state)
+            except Exception:
+                pass
+
+        # Compare requires at least two spectra
+        try:
+            if getattr(self, "compare_btn", None) is not None:
+                self.compare_btn.config(
+                    state=tk.NORMAL if len(self.spectra) >= 2 else tk.DISABLED
+                )
+        except Exception:
+            pass
+
+        # Delete is enabled when at least one spectrum is present
+        try:
+            if getattr(self, "delete_btn", None) is not None:
+                self.delete_btn.config(
+                    state=tk.NORMAL if len(self.spectra) > 0 else tk.DISABLED
+                )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     def _show_readme(self) -> None:
@@ -2739,15 +2942,6 @@ class SpanPeakSelector:
             )
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
             self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
-
-            self.delete_btn = ButtonCls(
-                control_frame,
-                text="Delete Trace",
-                command=self.delete_trace,
-                **button_kwargs,
-            )
-            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
-
             toggle_frame = tk.Frame(control_frame)
             toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(toggle_frame, text="Visible traces").pack(anchor="w")
@@ -2763,6 +2957,19 @@ class SpanPeakSelector:
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
             self.toggle_frame = toggle_frame
+
+        # Always present a Delete button; enabled when at least one trace exists
+        self.delete_btn = ButtonCls(
+            control_frame,
+            text="Delete Trace",
+            command=self.delete_trace,
+            **button_kwargs,
+        )
+        self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
+        try:
+            self.delete_btn.config(state=tk.NORMAL if len(self.spectra) > 0 else tk.DISABLED)
+        except Exception:
+            pass
 
         # Button rows for compact layout
         button_row1 = tk.Frame(control_frame)
@@ -2974,34 +3181,16 @@ class SpanPeakSelector:
 
         # Ensure the tables reflect any results already calculated before the GUI
         self._refresh_tables()
+        # Disable analysis controls if no spectra loaded yet
+        self._update_button_states()
         self.root.mainloop()
 
 
 def main() -> None:
-    """Launch a file selection dialog and start the analyser."""
-
-    root = tk.Tk()
-    root.withdraw()  # Hide the root window for the file dialog
-
-    file_paths = filedialog.askopenfilenames(
-        title="Select ESR CSV File",
-        filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
-    )
-
-    if hasattr(root, "destroy"):
-        root.destroy()
-
-    if not file_paths:
-        return
+    """Start the analyser GUI; load files via File > Open."""
 
     try:
-        spectra = []
-        labels: list[str] = []
-        for fp in file_paths:
-            p = Path(fp)
-            spectra.append(ESRLoader.load_csv(p))
-            labels.append(p.name)
-        app = SpanPeakSelector(spectra, labels=labels)
+        app = SpanPeakSelector()
         app.show()
     except Exception as exc:  # pragma: no cover - GUI error handling
         messagebox.showerror("Error", str(exc))
