@@ -4,16 +4,20 @@ A simple program for analyzing and visualizing **Electron Spin Resonance (ESR)**
 This project is at an early stage — we’re starting from the basics and will expand features over time.
 
 ## Features (so far)
-- Load ESR data files (e.g., Bruker CSV export).
-- Display raw spectra.
-- Basic plotting and inspection tools.
-- Simple GUI for selecting a data file to plot.
-- Measure ΔH_pp and FWHM.
-- Lorentzian fit for individual peaks
+- Load ESR data files (e.g., Bruker CSV export)
+- Display raw spectra
+- Basic plotting and inspection tools
+- Improved graphing functionality for publishable graphs
+- Simple GUI for selecting a data file to plot
+- Measure ΔH_pp and FWHM
 - Baseline correction for data refinement
+- Lorentzian fit for individual peaks
+- Voigt fit in the works
 - Trace integration, get absorption spectrum for absorption area analysis
-- g-factor calculation from H_res, and metadata
-- gyromagnetic ratio from calculated g-factor
+- g-factor calculation from H_res, and metadata (Requires multiple angular dependent spectra) 
+- gyromagnetic ratio from calculated g-factor (Requires multiple angular dependent spectra) 
+- Batch processing for multiple files
+- Compare spectra of multiple files
 
 ## Requirements
 - Python 3.10+
