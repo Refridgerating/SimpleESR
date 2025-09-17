@@ -10,6 +10,7 @@ are shown in a small table on the right hand side of the window.
 from __future__ import annotations
 
 from pathlib import Path
+import csv
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, colorchooser, simpledialog
 
@@ -753,6 +754,7 @@ class SpanPeakSelector:
         self._compare_table_title = "Comparison"
         self.metadata_text: str = ""
         self.delete_btn: tk.Button | ttk.Button | None = None
+        self.export_btn: tk.Button | ttk.Button | None = None
         self.g_btn: tk.Button | ttk.Button | None = None
         self.area_btn: tk.Button | ttk.Button | None = None
         self.batch_btn: tk.Button | ttk.Button | None = None
@@ -1802,6 +1804,61 @@ class SpanPeakSelector:
         return selected
 
     # ------------------------------------------------------------------
+    def _select_export_traces(self) -> list[int] | None:
+        """Prompt the user to pick analysed traces for export."""
+
+        eligible = [
+            i
+            for i, (res, lor) in enumerate(zip(self.results_all, self.lorentz_all))
+            if res or lor
+        ]
+        if not eligible:
+            messagebox.showinfo("Export Analysis", "No analysed traces available to export.")
+            return None
+
+        if self.root is None:
+            return eligible.copy()
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Export Analysis")
+        dialog.transient(self.root)
+        tk.Label(dialog, text="Select analysed traces to export:").pack(padx=10, pady=5)
+
+        listbox = tk.Listbox(dialog, selectmode=tk.EXTENDED, exportselection=False)
+        for idx in eligible:
+            listbox.insert(tk.END, self.labels[idx] if idx < len(self.labels) else f"Trace {idx + 1}")
+        listbox.pack(padx=10, pady=(5, 0), fill=tk.BOTH, expand=True)
+        listbox.focus_set()
+        tk.Label(
+            dialog, text="Tip: Shift-click to select a range; Ctrl-click to toggle items."
+        ).pack(padx=10, pady=(2, 8), anchor="w")
+
+        selected: list[int] = []
+
+        def on_ok() -> None:
+            selected.extend(eligible[i] for i in listbox.curselection())
+            dialog.destroy()
+
+        def on_cancel() -> None:
+            dialog.destroy()
+
+        def on_select_all() -> None:
+            listbox.select_set(0, tk.END)
+
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=(0, 5))
+        tk.Button(btn_frame, text="Select All", command=on_select_all).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="OK", command=on_ok).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
+
+        dialog.grab_set()
+        dialog.wait_window()
+
+        if not selected:
+            return None
+        return selected
+
+    # ------------------------------------------------------------------
     def batch_process(self) -> None:
         """Automatically analyse all loaded spectra with progress feedback."""
 
@@ -1891,6 +1948,115 @@ class SpanPeakSelector:
         self.auto_peaks = self.auto_peaks_all[first]
         self.abs_peaks = self.abs_peaks_all[first]
         self._refresh_tables()
+
+    # ------------------------------------------------------------------
+    def export_analysis_data(self) -> None:
+        """Export analysed results and metadata for selected traces to a CSV file."""
+
+        if not self.spectra:
+            messagebox.showinfo("Export Analysis", "No spectra loaded.")
+            return
+
+        indices = self._select_export_traces()
+        if not indices:
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export Analysis Data",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        metadata_keys: set[str] = set()
+        metadata_maps: dict[int, dict[str, object]] = {}
+        for idx in indices:
+            if 0 <= idx < len(self.spectra):
+                meta_raw = getattr(self.spectra[idx], "metadata", None)
+                meta_map: dict[str, object] = {}
+                if isinstance(meta_raw, dict):
+                    for key, value in meta_raw.items():
+                        key_str = str(key)
+                        meta_map[key_str] = value
+                        metadata_keys.add(key_str)
+                metadata_maps[idx] = meta_map
+            else:
+                metadata_maps[idx] = {}
+
+        meta_fields = [f"meta_{key}" for key in sorted(metadata_keys)]
+        fieldnames = [
+            "trace",
+            "category",
+            "analysis",
+            "peak",
+            "pos_x",
+            "pos_y",
+            "neg_x",
+            "neg_y",
+            "width",
+            "h_res",
+            "delta",
+            "A",
+            "B",
+            "area",
+            "g",
+            "kind",
+        ] + meta_fields
+
+        rows: list[dict[str, object]] = []
+
+        for idx in indices:
+            label = self.labels[idx] if 0 <= idx < len(self.labels) else f"Trace {idx + 1}"
+            metadata_map = metadata_maps.get(idx, {})
+
+            def _base_row() -> dict[str, object]:
+                row = {key: "" for key in fieldnames}
+                row["trace"] = label
+                for meta_key in metadata_keys:
+                    row[f"meta_{meta_key}"] = metadata_map.get(meta_key, "")
+                return row
+
+            for result in self.results_all[idx]:
+                row = _base_row()
+                row["category"] = "analysis"
+                row["analysis"] = result.get("analysis", "")
+                row["peak"] = result.get("peak", "")
+                row["pos_x"] = result.get("pos_x", "")
+                row["pos_y"] = result.get("pos_y", "")
+                row["neg_x"] = result.get("neg_x", "")
+                row["neg_y"] = result.get("neg_y", "")
+                row["width"] = result.get("width", "")
+                rows.append(row)
+
+            for lor in self.lorentz_all[idx]:
+                row = _base_row()
+                row["category"] = "lorentzian"
+                row["analysis"] = lor.get("analysis", "")
+                row["peak"] = lor.get("peak", "")
+                row["h_res"] = lor.get("h_res", "")
+                row["delta"] = lor.get("delta", "")
+                row["A"] = lor.get("A", "")
+                row["B"] = lor.get("B", "")
+                row["area"] = lor.get("area", "")
+                row["g"] = lor.get("g", "")
+                row["kind"] = lor.get("kind", "")
+                rows.append(row)
+
+        if not rows:
+            messagebox.showinfo("Export Analysis", "No analysis results available for the selected traces.")
+            return
+
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+        except Exception as exc:
+            messagebox.showerror("Export Analysis", str(exc))
+            return
+
+        messagebox.showinfo("Export Analysis", f"Exported {len(rows)} rows to {path}")
 
     # ------------------------------------------------------------------
     def _get_baseline_options(self) -> tuple[bool, bool] | None:
@@ -2327,6 +2493,7 @@ class SpanPeakSelector:
                 )
 
         self._update_batch_table()
+        self._update_button_states()
 
     def _update_batch_table(self) -> None:
         """Populate the batch comparison table with H_res and FWHM values."""
@@ -2684,6 +2851,14 @@ class SpanPeakSelector:
                     btn.config(state=state)
             except Exception:
                 pass
+
+        has_results = any(self.results_all) or any(self.lorentz_all)
+        try:
+            if getattr(self, "export_btn", None) is not None:
+                export_state = tk.NORMAL if (has_data and has_results) else tk.DISABLED
+                self.export_btn.config(state=export_state)
+        except Exception:
+            pass
 
         # Compare requires at least two spectra
         try:
@@ -3187,6 +3362,13 @@ class SpanPeakSelector:
             button_row3,
             text="Area Integral",
             command=self.calculate_area,
+            **button_kwargs,
+        )
+
+        self.export_btn = ButtonCls(
+            button_row3,
+            text="Export Analysis",
+            command=self.export_analysis_data,
             **button_kwargs,
         )
 
