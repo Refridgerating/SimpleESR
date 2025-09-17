@@ -1662,6 +1662,56 @@ class SpanPeakSelector:
                 self._silent_auto = False
 
     # ------------------------------------------------------------------
+    def _select_delete_traces(self) -> list[int] | None:
+        """Prompt the user to choose one or more traces to delete.
+
+        Returns a list of selected indices or ``None`` if cancelled.
+        """
+
+        if self.root is None:
+            # Fallback: delete current only
+            return [self.current] if self.spectra else None
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Delete Traces")
+        tk.Label(
+            dialog,
+            text="Select traces to delete (Ctrl/Shift for multi-select):",
+        ).pack(padx=10, pady=(10, 5), anchor="w")
+
+        listbox = tk.Listbox(dialog, selectmode=tk.MULTIPLE, exportselection=False)
+        for lbl in self.labels:
+            listbox.insert(tk.END, lbl)
+        listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+
+        # Preselect current trace for convenience
+        try:
+            listbox.selection_set(self.current)
+        except Exception:
+            pass
+
+        selected: list[int] = []
+
+        def on_ok() -> None:
+            selected.extend(list(listbox.curselection()))
+            dialog.destroy()
+
+        def on_cancel() -> None:
+            dialog.destroy()
+
+        btn = tk.Frame(dialog)
+        btn.pack(pady=(0, 10))
+        tk.Button(btn, text="Delete", command=on_ok).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
+
+        dialog.grab_set()
+        dialog.wait_window()
+
+        if not selected:
+            return None
+        return selected
+
+    # ------------------------------------------------------------------
     def calculate_area(self) -> None:
         """Calculate the area for fitted Lorentzian absorption peaks."""
 
@@ -2326,32 +2376,43 @@ class SpanPeakSelector:
 
     # ------------------------------------------------------------------
     def delete_trace(self) -> None:
-        """Remove the currently selected trace."""
+        """Remove one or more traces selected by the user."""
 
-        # Allow deleting even when only a single spectrum is loaded to clear
-        # the view and return to an empty state.
         if len(self.spectra) == 0:
+            return
+
+        # Ask the user which traces to delete (multi-select)
+        indices = self._select_delete_traces()
+        if not indices:
             return
 
         self._save_state()
 
-        idx = self.current
-        del self.spectra[idx]
-        del self.labels[idx]
-        del self.results_all[idx]
-        del self.lorentz_all[idx]
-        del self.ranges_all[idx]
-        del self.auto_peaks_all[idx]
-        del self.abs_peaks_all[idx]
-        line = self.trace_lines.pop(idx)
-        line.remove()
+        # Delete from highest index to lowest to avoid reindexing issues
+        for idx in sorted(indices, reverse=True):
+            if not (0 <= idx < len(self.spectra)):
+                continue
+            del self.spectra[idx]
+            del self.labels[idx]
+            del self.results_all[idx]
+            del self.lorentz_all[idx]
+            del self.ranges_all[idx]
+            del self.auto_peaks_all[idx]
+            del self.abs_peaks_all[idx]
+            line = self.trace_lines.pop(idx)
+            try:
+                line.remove()
+            except Exception:
+                pass
         if self.toggle_frame is not None:
+            # Preserve current visibility of remaining traces
+            vis_states = [ln.get_visible() for ln in self.trace_lines]
             for child in self.toggle_frame.winfo_children():
                 child.destroy()
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
             self.trace_vars = []
-            for i, lbl in enumerate(self.labels):
-                var = tk.BooleanVar(value=True)
+            for i, (lbl, visible) in enumerate(zip(self.labels, vis_states)):
+                var = tk.BooleanVar(value=bool(visible))
                 chk = tk.Checkbutton(
                     self.toggle_frame,
                     text=lbl,
@@ -2398,6 +2459,7 @@ class SpanPeakSelector:
         self._update_metadata_display()
         self.update_legend()
         self._rescale()
+        self._update_button_states()
 
     # ------------------------------------------------------------------
     def _append_spectrum(self, spectrum: ESRSpectrum, label: str) -> None:
