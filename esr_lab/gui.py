@@ -743,6 +743,14 @@ class SpanPeakSelector:
         self.extra_canvases: list[FigureCanvasTkAgg] = []
         self.trace_var: tk.StringVar | None = None
         self.meta_label: tk.Label | None = None
+        self.peak_table_label: tk.Label | None = None
+        self.results_table_label: tk.Label | None = None
+        self.lorentz_table_label: tk.Label | None = None
+        self.compare_table_label: tk.Label | None = None
+        self._peak_table_title = "Peak position"
+        self._analysis_table_title = "Analysis Results"
+        self._lorentz_table_title = "Lorentzian Fits"
+        self._compare_table_title = "Comparison"
         self.metadata_text: str = ""
         self.delete_btn: tk.Button | ttk.Button | None = None
         self.g_btn: tk.Button | ttk.Button | None = None
@@ -1593,6 +1601,14 @@ class SpanPeakSelector:
         if self.compare_tree is None:
             return
 
+        if self.compare_table_label is not None:
+            first_label = self.labels[first_idx] if 0 <= first_idx < len(self.labels) else f"Trace {first_idx + 1}"
+            second_label = self.labels[second_idx] if 0 <= second_idx < len(self.labels) else f"Trace {second_idx + 1}"
+            detail = f"{first_label} vs {second_label}"
+            self.compare_table_label.config(
+                text=self._format_table_title(self._compare_table_title, detail)
+            )
+
         for item in self.compare_tree.get_children():
             self.compare_tree.delete(item)
 
@@ -1751,10 +1767,14 @@ class SpanPeakSelector:
         dialog.title("Batch Selection")
         tk.Label(dialog, text="Select spectra to process:").pack(padx=10, pady=5)
 
-        listbox = tk.Listbox(dialog, selectmode=tk.MULTIPLE, exportselection=False)
+        listbox = tk.Listbox(dialog, selectmode=tk.EXTENDED, exportselection=False)
         for lbl in self.labels:
             listbox.insert(tk.END, lbl)
-        listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+        listbox.pack(padx=10, pady=(5, 0), fill=tk.BOTH, expand=True)
+        listbox.focus_set()
+        tk.Label(
+            dialog, text="Tip: Shift-click to select a range; Ctrl-click to toggle items."
+        ).pack(padx=10, pady=(2, 8), anchor="w")
 
         selected: list[int] = []
 
@@ -1765,8 +1785,12 @@ class SpanPeakSelector:
         def on_cancel() -> None:
             dialog.destroy()
 
+        def on_select_all() -> None:
+            listbox.select_set(0, tk.END)
+
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(pady=(0, 5))
+        tk.Button(btn_frame, text="Select All", command=on_select_all).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="OK", command=on_ok).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
 
@@ -1788,14 +1812,22 @@ class SpanPeakSelector:
         if not indices:
             return
 
+        had_silent = hasattr(self, "_silent_auto")
+        previous_silent = getattr(self, "_silent_auto", False)
+        self._silent_auto = True
+
         total = len(indices)
         progress_win = None
         progress_bar = None
+        status_label = None
+        errors: list[str] = []
+
         if self.root is not None:
             try:
                 progress_win = tk.Toplevel(self.root)
                 progress_win.title("Batch Process")
-                tk.Label(progress_win, text="Processing spectra...").pack(padx=10, pady=10)
+                status_label = tk.Label(progress_win, text="Processing spectra...")
+                status_label.pack(padx=10, pady=10)
                 progress_bar = ttk.Progressbar(
                     progress_win, orient=tk.HORIZONTAL, length=300, mode="determinate"
                 )
@@ -1804,29 +1836,51 @@ class SpanPeakSelector:
             except Exception:
                 progress_win = None
                 progress_bar = None
+                status_label = None
 
-        for n, i in enumerate(indices):
-            spec = self.spectra[i]
-            self.current = i
-            self.spectrum = spec
-            self.results = self.results_all[i]
-            self.lorentz_results = self.lorentz_all[i]
-            self.ranges = self.ranges_all[i]
-            self.auto_peaks = self.auto_peaks_all[i]
-            self.abs_peaks = self.abs_peaks_all[i]
-            try:
-                self.peak_finder(auto=True)
-                self.start_peak_to_peak(auto=True)
-                self.start_analysis(auto=True)
-                self.fit_lorentzian(auto=True)
-            except Exception as exc:
-                messagebox.showerror("Batch Process", str(exc))
-            if progress_bar is not None:
-                progress_bar["value"] = (n + 1) / total * 100.0
-                progress_win.update_idletasks()
+        try:
+            for n, i in enumerate(indices):
+                label = self.labels[i] if 0 <= i < len(self.labels) else f"Trace {i + 1}"
+                if status_label is not None:
+                    status_label.config(text=f"Processing {label} ({n + 1}/{total})")
+                self.current = i
+                self.spectrum = self.spectra[i]
+                self.results = self.results_all[i]
+                self.lorentz_results = self.lorentz_all[i]
+                self.ranges = self.ranges_all[i]
+                self.auto_peaks = self.auto_peaks_all[i]
+                self.abs_peaks = self.abs_peaks_all[i]
+                try:
+                    self.peak_finder(auto=True)
+                    self.start_peak_to_peak(auto=True)
+                    self.start_analysis(auto=True)
+                    self.fit_lorentzian(auto=True)
+                except Exception as exc:
+                    errors.append(f"{label}: {exc}")
+                    print(f"[Batch Process] Error processing {label}: {exc}")
+                if progress_bar is not None:
+                    progress_bar["value"] = (n + 1) / total * 100.0
+                    progress_win.update_idletasks()
+        finally:
+            if had_silent:
+                self._silent_auto = previous_silent
+            else:
+                try:
+                    del self._silent_auto
+                except AttributeError:
+                    pass
 
         if progress_win is not None:
+            if status_label is not None:
+                if errors:
+                    status_label.config(text="Completed with errors. Check console for details.")
+                else:
+                    status_label.config(text="Batch process completed successfully.")
+                progress_win.update_idletasks()
             progress_win.destroy()
+
+        if errors and self.root is None:
+            print(f"[Batch Process] Completed with errors: {'; '.join(errors)}")
 
         first = indices[0]
         self.current = first
@@ -2172,8 +2226,29 @@ class SpanPeakSelector:
 
         pd.DataFrame(self.results).to_csv(Path(path), index=False)
 
+    def _format_table_title(self, base: str, detail: str | None) -> str:
+        """Return a caption with an optional detail suffix."""
+
+        return f"{base} ({detail})" if detail else base
+
+    def _update_table_titles(self, trace_label: str | None) -> None:
+        """Update per-trace table headings with the active trace label."""
+
+        for widget, base in (
+            (self.peak_table_label, self._peak_table_title),
+            (self.results_table_label, self._analysis_table_title),
+            (self.lorentz_table_label, self._lorentz_table_title),
+        ):
+            if widget is not None:
+                widget.config(text=self._format_table_title(base, trace_label))
+
     def _refresh_tables(self) -> None:
         """Refresh the analysis tables for the currently active trace."""
+
+        trace_label: str | None = None
+        if self.labels and 0 <= self.current < len(self.labels):
+            trace_label = self.labels[self.current]
+        self._update_table_titles(trace_label)
 
         if self.peak_tree is not None:
             for item in self.peak_tree.get_children():
@@ -3135,9 +3210,10 @@ class SpanPeakSelector:
         # Peak position table
         peak_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         peak_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        tk.Label(
-            peak_frame, text="Peak position", font=("TkDefaultFont", 10, "bold")
-        ).pack(anchor="w", padx=5, pady=(5, 0))
+        self.peak_table_label = tk.Label(
+            peak_frame, text=self._peak_table_title, font=("TkDefaultFont", 10, "bold")
+        )
+        self.peak_table_label.pack(anchor="w", padx=5, pady=(5, 0))
         peak_columns = ("trace", "peak", "pos", "neg")
         self.peak_tree = ttk.Treeview(
             peak_frame, columns=peak_columns, show="headings", height=5
@@ -3157,9 +3233,10 @@ class SpanPeakSelector:
         # Results tables
         result_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         result_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        tk.Label(
-            result_frame, text="Analysis Results", font=("TkDefaultFont", 10, "bold")
-        ).pack(anchor="w", padx=5, pady=(5, 0))
+        self.results_table_label = tk.Label(
+            result_frame, text=self._analysis_table_title, font=("TkDefaultFont", 10, "bold")
+        )
+        self.results_table_label.pack(anchor="w", padx=5, pady=(5, 0))
         columns = ("analysis", "peak", "pos_x", "pos_y", "neg_x", "neg_y", "width")
         self.tree = ttk.Treeview(result_frame, columns=columns, show="headings", height=5)
         headings = {
@@ -3178,9 +3255,10 @@ class SpanPeakSelector:
 
         lorentz_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         lorentz_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        tk.Label(
-            lorentz_frame, text="Lorentzian Fits", font=("TkDefaultFont", 10, "bold")
-        ).pack(anchor="w", padx=5, pady=(5, 0))
+        self.lorentz_table_label = tk.Label(
+            lorentz_frame, text=self._lorentz_table_title, font=("TkDefaultFont", 10, "bold")
+        )
+        self.lorentz_table_label.pack(anchor="w", padx=5, pady=(5, 0))
         lorentz_columns = ("analysis", "peak", "h_res", "delta", "A", "B", "area", "g")
         self.lorentz_tree = ttk.Treeview(
             lorentz_frame, columns=lorentz_columns, show="headings", height=5
@@ -3202,9 +3280,10 @@ class SpanPeakSelector:
 
         compare_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         compare_frame.pack(fill=tk.BOTH, expand=True)
-        tk.Label(
-            compare_frame, text="Comparison", font=("TkDefaultFont", 10, "bold")
-        ).pack(anchor="w", padx=5, pady=(5, 0))
+        self.compare_table_label = tk.Label(
+            compare_frame, text=self._compare_table_title, font=("TkDefaultFont", 10, "bold")
+        )
+        self.compare_table_label.pack(anchor="w", padx=5, pady=(5, 0))
         compare_cols = ("param", "first", "second", "diff")
         self.compare_tree = ttk.Treeview(
             compare_frame, columns=compare_cols, show="headings", height=6
