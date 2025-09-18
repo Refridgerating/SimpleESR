@@ -1,4 +1,4 @@
-"""Simple GUI utilities for visualizing and analysing ESR spectra.
+﻿"""Simple GUI utilities for visualizing and analysing ESR spectra.
 
 This module now provides an interactive plot accompanied by an analysis panel.
 Users can press a button to activate two span selections that determine the
@@ -68,7 +68,7 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
     corresponding tool so that users are left with the standard navigation
     controls (home, pan, zoom, save) only.  The toolbar additionally knows about
     the currently selected spectrum through a ``get_active_index`` callback so
-    that line editing operates on the user‑chosen graph.
+    that line editing operates on the userΓÇæchosen graph.
     """
 
     # Filter out the "Subplots" entry from the base class' tool items and add
@@ -753,8 +753,6 @@ class SpanPeakSelector:
         self._lorentz_table_title = "Lorentzian Fits"
         self._compare_table_title = "Comparison"
         self.metadata_text: str = ""
-        self._button_cls: type[tk.Button] | type[ttk.Button] = ttk.Button if hasattr(ttk, 'Button') else tk.Button
-        self._button_kwargs: dict[str, object] = {}
         self.delete_btn: tk.Button | ttk.Button | None = None
         self.export_btn: tk.Button | ttk.Button | None = None
         self.g_btn: tk.Button | ttk.Button | None = None
@@ -921,10 +919,6 @@ class SpanPeakSelector:
             self.trace_lines = []
             for sp, lbl in zip(self.spectra, self.labels):
                 (line,) = self.ax.plot(sp.field, sp.intensity, label=lbl)
-                try:
-                    line.set_gid("trace")
-                except Exception:
-                    pass
                 self.trace_lines.append(line)
             # Restore previous visibility per trace if available
             vis = state.get("visibility", [])
@@ -1483,7 +1477,6 @@ class SpanPeakSelector:
             and self.control_frame is not None
             and self.root is not None
         ):
-            insert_before = self.delete_btn if self.delete_btn is not None else None
             self.trace_var = tk.StringVar(value=self.labels[0])
             self.trace_combo = ttk.Combobox(
                 self.control_frame,
@@ -1491,17 +1484,25 @@ class SpanPeakSelector:
                 values=self.labels,
                 state="readonly",
             )
-            combo_pack = {"fill": tk.X, "padx": 5, "pady": (0, 5)}
-            if insert_before is not None:
-                combo_pack["before"] = insert_before
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
-            self.trace_combo.pack(**combo_pack)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            if self.delete_btn is None:
+                try:
+                    self.delete_btn = ttk.Button(
+                        self.control_frame,
+                        text="Delete Trace",
+                        command=self.delete_trace,
+                        style="Compact.TButton",
+                    )
+                except Exception:
+                    self.delete_btn = tk.Button(
+                        self.control_frame, text="Delete Trace", command=self.delete_trace
+                    )
+                self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
 
             self.toggle_frame = tk.Frame(self.control_frame)
-            toggle_pack = {"fill": tk.X, "padx": 5, "pady": (0, 5)}
-            if insert_before is not None:
-                toggle_pack["before"] = insert_before
-            self.toggle_frame.pack(**toggle_pack)
+            self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
             self.trace_vars = []
             for i, lbl in enumerate(self.labels):
@@ -1682,7 +1683,7 @@ class SpanPeakSelector:
     def _select_delete_traces(self) -> list[int] | None:
         """Prompt the user to choose one or more traces to delete.
 
-        Returns a list of selected indices or `None` if cancelled.
+        Returns a list of selected indices or ``None`` if cancelled.
         """
 
         if self.root is None:
@@ -1691,16 +1692,15 @@ class SpanPeakSelector:
 
         dialog = tk.Toplevel(self.root)
         dialog.title("Delete Traces")
-        tk.Label(dialog, text="Select traces to delete:").pack(padx=10, pady=5)
+        tk.Label(
+            dialog,
+            text="Select traces to delete (Ctrl/Shift for multi-select):",
+        ).pack(padx=10, pady=(10, 5), anchor="w")
 
-        listbox = tk.Listbox(dialog, selectmode=tk.EXTENDED, exportselection=False)
+        listbox = tk.Listbox(dialog, selectmode=tk.MULTIPLE, exportselection=False)
         for lbl in self.labels:
             listbox.insert(tk.END, lbl)
-        listbox.pack(padx=10, pady=(5, 0), fill=tk.BOTH, expand=True)
-        listbox.focus_set()
-        tk.Label(
-            dialog, text="Tip: Shift-click to select a range; Ctrl-click to toggle items."
-        ).pack(padx=10, pady=(2, 8), anchor="w")
+        listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
 
         # Preselect current trace for convenience
         try:
@@ -1711,28 +1711,16 @@ class SpanPeakSelector:
         selected: list[int] = []
 
         def on_ok() -> None:
-            selected.extend(listbox.curselection())
+            selected.extend(list(listbox.curselection()))
             dialog.destroy()
 
         def on_cancel() -> None:
             dialog.destroy()
 
-        def on_select_all() -> None:
-            listbox.select_set(0, tk.END)
-
-        button_cls = getattr(self, "_button_cls", ttk.Button if hasattr(ttk, "Button") else tk.Button)
-        base_kwargs = dict(getattr(self, "_button_kwargs", {}))
-
-        def make_button(parent: tk.Widget, **kwargs: object) -> tk.Widget:
-            opts = base_kwargs.copy()
-            opts.update(kwargs)
-            return button_cls(parent, **opts)
-
         btn = tk.Frame(dialog)
         btn.pack(pady=(0, 10))
-        make_button(btn, text="Select All", command=on_select_all).pack(side=tk.LEFT, padx=5)
-        make_button(btn, text="Delete", command=on_ok).pack(side=tk.LEFT, padx=5)
-        make_button(btn, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn, text="Delete", command=on_ok).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
 
         dialog.grab_set()
         dialog.wait_window()
@@ -2106,13 +2094,6 @@ class SpanPeakSelector:
         if options is None:
             return
         use_poly, use_auto = options
-        if self.spectrum is None:
-            message = "No spectrum selected. Load data before applying baseline correction."
-            if self.root is None:
-                print(f"[Baseline Correction] {message}")
-            else:
-                messagebox.showwarning("Baseline Correction", message)
-            return
 
         field = self.spectrum.field
         intensity = self.spectrum.intensity
@@ -2207,10 +2188,6 @@ class SpanPeakSelector:
 
         label = f"{self.labels[self.current]} (baseline corrected)"
         (line,) = self.ax.plot(field, corrected, label=label)
-        try:
-            line.set_gid("trace")
-        except Exception:
-            pass
         self.trace_lines.append(line)
         self.spectra.append(
             ESRSpectrum(
@@ -2231,7 +2208,6 @@ class SpanPeakSelector:
             and self.control_frame is not None
             and self.root is not None
         ):
-            insert_before = self.delete_btn if self.delete_btn is not None else None
             self.trace_var = tk.StringVar(value=self.labels[0])
             self.trace_combo = ttk.Combobox(
                 self.control_frame,
@@ -2239,17 +2215,25 @@ class SpanPeakSelector:
                 values=self.labels,
                 state="readonly",
             )
-            combo_pack = {"fill": tk.X, "padx": 5, "pady": (0, 5)}
-            if insert_before is not None:
-                combo_pack["before"] = insert_before
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
-            self.trace_combo.pack(**combo_pack)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            if self.delete_btn is None:
+                try:
+                    self.delete_btn = ttk.Button(
+                        self.control_frame,
+                        text="Delete Trace",
+                        command=self.delete_trace,
+                        style="Compact.TButton",
+                    )
+                except Exception:
+                    self.delete_btn = tk.Button(
+                        self.control_frame, text="Delete Trace", command=self.delete_trace
+                    )
+                self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
 
             self.toggle_frame = tk.Frame(self.control_frame)
-            toggle_pack = {"fill": tk.X, "padx": 5, "pady": (0, 5)}
-            if insert_before is not None:
-                toggle_pack["before"] = insert_before
-            self.toggle_frame.pack(**toggle_pack)
+            self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
             self.trace_vars = []
             for i, lbl in enumerate(self.labels):
@@ -2331,7 +2315,6 @@ class SpanPeakSelector:
             and self.control_frame is not None
             and self.root is not None
         ):
-            insert_before = self.delete_btn if self.delete_btn is not None else None
             self.trace_var = tk.StringVar(value=self.labels[0])
             self.trace_combo = ttk.Combobox(
                 self.control_frame,
@@ -2339,17 +2322,25 @@ class SpanPeakSelector:
                 values=self.labels,
                 state="readonly",
             )
-            combo_pack = {"fill": tk.X, "padx": 5, "pady": (0, 5)}
-            if insert_before is not None:
-                combo_pack["before"] = insert_before
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
-            self.trace_combo.pack(**combo_pack)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            if self.delete_btn is None:
+                try:
+                    self.delete_btn = ttk.Button(
+                        self.control_frame,
+                        text="Delete Trace",
+                        command=self.delete_trace,
+                        style="Compact.TButton",
+                    )
+                except Exception:
+                    self.delete_btn = tk.Button(
+                        self.control_frame, text="Delete Trace", command=self.delete_trace
+                    )
+                self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
 
             self.toggle_frame = tk.Frame(self.control_frame)
-            toggle_pack = {"fill": tk.X, "padx": 5, "pady": (0, 5)}
-            if insert_before is not None:
-                toggle_pack["before"] = insert_before
-            self.toggle_frame.pack(**toggle_pack)
+            self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
             self.trace_vars = []
             for i, lbl in enumerate(self.labels):
@@ -2673,7 +2664,7 @@ class SpanPeakSelector:
                 chk.pack(anchor="w")
                 self.trace_vars.append(var)
         if len(self.spectra) == 0:
-            # No spectra left – reset state
+            # No spectra left ΓÇô reset state
             self.current = 0
             self.spectrum = None
             self.results = []
@@ -2746,7 +2737,6 @@ class SpanPeakSelector:
             and self.control_frame is not None
             and self.root is not None
         ):
-            insert_before = self.delete_btn if self.delete_btn is not None else None
             self.trace_var = tk.StringVar(value=self.labels[0])
             self.trace_combo = ttk.Combobox(
                 self.control_frame,
@@ -2754,17 +2744,24 @@ class SpanPeakSelector:
                 values=self.labels,
                 state="readonly",
             )
-            combo_pack = {"fill": tk.X, "padx": 5, "pady": (0, 5)}
-            if insert_before is not None:
-                combo_pack["before"] = insert_before
             self.trace_combo.bind("<<ComboboxSelected>>", self._on_trace_change)
-            self.trace_combo.pack(**combo_pack)
+            self.trace_combo.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+            try:
+                self.delete_btn = ttk.Button(
+                    self.control_frame,
+                    text="Delete Trace",
+                    command=self.delete_trace,
+                    style="Compact.TButton",
+                )
+            except Exception:
+                self.delete_btn = tk.Button(
+                    self.control_frame, text="Delete Trace", command=self.delete_trace
+                )
+            self.delete_btn.pack(fill=tk.X, padx=5, pady=(0, 5))
 
             self.toggle_frame = tk.Frame(self.control_frame)
-            toggle_pack = {"fill": tk.X, "padx": 5, "pady": (0, 5)}
-            if insert_before is not None:
-                toggle_pack["before"] = insert_before
-            self.toggle_frame.pack(**toggle_pack)
+            self.toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
             tk.Label(self.toggle_frame, text="Visible traces").pack(anchor="w")
             self.trace_vars = []
             for i, lbl in enumerate(self.labels):
@@ -3045,11 +3042,8 @@ class SpanPeakSelector:
                     "activebackground": "#357ab7",
                 }
 
-        self._button_cls = ButtonCls
-        self._button_kwargs = dict(button_kwargs)
-
         # Basic window housekeeping such as maximising the window if supported.
-        self.root.title("SimpleESR")
+        self.root.title("ESR Spectrum")
         try:
             self.root.update_idletasks()
             self.root.state("zoomed")
