@@ -22,7 +22,7 @@ try:  # pragma: no cover - optional dependency
     import ttkbootstrap  # type: ignore
 except Exception:  # pragma: no cover - handled at runtime
     ttkbootstrap = None
-
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib import colors as mcolors
@@ -100,6 +100,9 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         update_legend: Callable[[], None] | None = None,
         set_label: Callable[[int, str], None] | None = None,
         get_trace_line: Callable[[int], Line2D | None] | None = None,
+        get_canvas_size: Callable[[], tuple[int, int]] | None = None,
+        set_canvas_size: Callable[[int, int], None] | None = None,
+        get_theme_palette: Callable[[], dict[str, str]] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(canvas, window, **kwargs)
@@ -107,8 +110,73 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         self.update_legend_callback = update_legend
         self.set_label_callback = set_label
         self.get_trace_line = get_trace_line
+        self._get_canvas_size_cb = get_canvas_size
+        self._set_canvas_size_cb = set_canvas_size
+        self._get_theme_palette = get_theme_palette or (lambda: {})
         # Keep a reference to the edit dialog so it isn't GC'd and can be reused
         self._edit_dialog: tk.Toplevel | None = None
+
+    def update_theme(self, palette: dict[str, str]) -> None:
+        button_bg = palette.get('button_bg', '#4a90e2')
+        button_fg = palette.get('button_fg', '#ffffff')
+        button_active = palette.get('button_active_bg', button_bg)
+        toolbar_bg = palette.get('toolbar_bg', button_bg)
+        toolbar_fg = palette.get('text', '#1e1e1e')
+        try:
+            self.configure(background=toolbar_bg)
+        except Exception:
+            pass
+        try:
+            style = ttk.Style(self)
+            style.configure('Toolbar.TButton', background=button_bg, foreground=button_fg)
+            style.map('Toolbar.TButton', background=[('pressed', button_active), ('active', button_active), ('!disabled', button_bg)], foreground=[('disabled', '#9a9a9a'), ('!disabled', button_fg)])
+            style.configure('Toolbar.TCheckbutton', background=toolbar_bg, foreground=button_fg)
+            style.map('Toolbar.TCheckbutton', background=[('selected', button_active), ('active', button_active), ('!disabled', toolbar_bg)], foreground=[('disabled', '#9a9a9a'), ('!disabled', button_fg)])
+        except Exception:
+            style = None
+
+        def _style(widget: tk.Widget) -> None:
+            try:
+                if isinstance(widget, tk.Button):
+                    widget.configure(
+                        bg=button_bg,
+                        fg=button_fg,
+                        activebackground=button_active,
+                        activeforeground=button_fg,
+                        highlightbackground=palette.get('accent', button_bg),
+                    )
+                elif isinstance(widget, tk.Checkbutton):
+                    widget.configure(
+                        bg=toolbar_bg,
+                        fg=toolbar_fg,
+                        selectcolor=toolbar_bg,
+                        activebackground=toolbar_bg,
+                        activeforeground=toolbar_fg,
+                        highlightbackground=palette.get('accent', button_bg),
+                    )
+                elif isinstance(widget, ttk.Button):
+                    try:
+                        widget.configure(style='Toolbar.TButton')
+                    except Exception:
+                        pass
+                elif isinstance(widget, ttk.Checkbutton):
+                    try:
+                        widget.configure(style='Toolbar.TCheckbutton')
+                    except Exception:
+                        pass
+                elif isinstance(widget, tk.Label):
+                    widget.configure(bg=toolbar_bg, fg=toolbar_fg)
+                elif isinstance(widget, (tk.Frame, tk.Canvas)):
+                    widget.configure(bg=toolbar_bg)
+                else:
+                    widget.configure(bg=toolbar_bg)
+            except Exception:
+                pass
+            for sub in getattr(widget, 'winfo_children', lambda: [])():
+                _style(sub)
+
+        _style(self)
+
 
     def update_legend(self) -> None:
         if self.update_legend_callback:
@@ -158,6 +226,22 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             return
 
         ax = axes[0]
+        dpi = float(getattr(figure, 'dpi', 72.0))
+        palette = {}
+        if callable(getattr(self, '_get_theme_palette', None)):
+            try:
+                palette = self._get_theme_palette() or {}
+            except Exception:
+                palette = {}
+        defaults = {
+            'panel_bg': '#f4f4f4',
+            'text': '#1e1e1e',
+            'entry_bg': '#ffffff',
+            'button_bg': '#4a90e2',
+            'button_fg': '#ffffff',
+            'button_active_bg': '#357ab7',
+        }
+        palette = {**defaults, **palette}
 
         # Reuse the existing dialog if it is still open
         try:
@@ -178,6 +262,10 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             master = self
         dialog = tk.Toplevel(master)
         dialog.title("Edit Plot")
+        try:
+            dialog.configure(bg=palette['panel_bg'])
+        except Exception:
+            pass
 
         # Track dialog so it survives while open
         self._edit_dialog = dialog
@@ -196,11 +284,47 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         # Helper to create a labelled entry
         def add_entry(row: int, label: str, initial: str) -> tk.Entry:
-            tk.Label(dialog, text=label).grid(row=row, column=0, sticky="e")
-            var = tk.Entry(dialog)
-            var.insert(0, initial)
-            var.grid(row=row, column=1, padx=5, pady=2)
-            return var
+            lbl = tk.Label(dialog, text=label)
+            lbl.grid(row=row, column=0, sticky="e")
+            try:
+                lbl.configure(bg=palette['panel_bg'], fg=palette['text'])
+            except Exception:
+                pass
+            entry = tk.Entry(dialog)
+            entry.insert(0, initial)
+            try:
+                entry.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+            except Exception:
+                pass
+            entry.grid(row=row, column=1, padx=5, pady=2)
+            return entry
+
+        def _theme_dialog_widget(widget: tk.Widget) -> None:
+            for child in getattr(widget, 'winfo_children', lambda: [])():
+                if getattr(child, '_theme_exempt', False):
+                    continue
+                try:
+                    if isinstance(child, tk.Frame):
+                        child.configure(bg=palette['panel_bg'])
+                    elif isinstance(child, tk.Label):
+                        child.configure(bg=palette['panel_bg'], fg=palette['text'])
+                    elif isinstance(child, tk.Entry):
+                        child.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+                    elif isinstance(child, tk.Button):
+                        child.configure(bg=palette['button_bg'], fg=palette['button_fg'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+                    elif isinstance(child, tk.Checkbutton):
+                        child.configure(bg=palette['panel_bg'], fg=palette['text'], selectcolor=palette['panel_bg'], activebackground=palette['panel_bg'], activeforeground=palette['text'])
+                    elif isinstance(child, tk.Radiobutton):
+                        child.configure(bg=palette['panel_bg'], fg=palette['text'], selectcolor=palette['panel_bg'], activebackground=palette['panel_bg'], activeforeground=palette['text'])
+                    elif isinstance(child, tk.OptionMenu):
+                        child.configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+                        try:
+                            child['menu'].configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                _theme_dialog_widget(child)
 
         xmin, xmax = ax.get_xlim()
         ymin, ymax = ax.get_ylim()
@@ -233,14 +357,30 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         except Exception:
             sel_idx = 0
 
-        tk.Label(dialog, text="Trace").grid(row=7, column=0, sticky="e")
+        trace_label = tk.Label(dialog, text="Trace")
+        trace_label.grid(row=7, column=0, sticky="e")
+        try:
+            trace_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
         trace_var = tk.StringVar(value=(display_names[sel_idx] if display_names else ""))
         try:
             trace_choice = ttk.Combobox(dialog, values=display_names, textvariable=trace_var, state="readonly")
             trace_choice.grid(row=7, column=1, padx=5, pady=2, sticky="w")
+            try:
+                combo_style = ttk.Style(dialog)
+                combo_style.configure('PlotEditor.TCombobox', fieldbackground=palette['entry_bg'], foreground=palette['text'], background=palette['entry_bg'])
+                trace_choice.configure(style='PlotEditor.TCombobox')
+            except Exception:
+                pass
         except Exception:
             trace_choice = tk.OptionMenu(dialog, trace_var, *(display_names or [""]))
             trace_choice.grid(row=7, column=1, padx=5, pady=2, sticky="w")
+            try:
+                trace_choice.configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+                trace_choice['menu'].configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+            except Exception:
+                pass
 
         def _selected_index() -> int:
             name = trace_var.get()
@@ -263,19 +403,30 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
                 return ""
 
         color_init = _to_hex_safe(line.get_color()) if line is not None else ""
-        tk.Label(dialog, text="Line color").grid(row=9, column=0, sticky="e")
+        color_label = tk.Label(dialog, text="Line color")
+        color_label.grid(row=9, column=0, sticky="e")
+        try:
+            color_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
         color_frame = tk.Frame(dialog)
+        try:
+            color_frame.configure(bg=palette['panel_bg'])
+        except Exception:
+            pass
         color_frame.grid(row=9, column=1, padx=5, pady=2, sticky="w")
         color_ent = tk.Entry(color_frame)
         color_ent.insert(0, color_init)
         color_ent.grid(row=0, column=0)
+        color_ent._theme_exempt = True
 
         # Some color strings are not valid Tk colors; guard preview creation.
         try:
-            preview = tk.Canvas(color_frame, width=20, height=20, bg=color_init)
+            preview = tk.Canvas(color_frame, width=20, height=20, bg=color_init, highlightthickness=0)
         except Exception:
-            preview = tk.Canvas(color_frame, width=20, height=20)
+            preview = tk.Canvas(color_frame, width=20, height=20, highlightthickness=0)
         preview.grid(row=0, column=1, padx=5)
+        preview._theme_exempt = True
 
         def choose_color() -> None:
             """Open a color chooser and update the preview on success."""
@@ -295,16 +446,20 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
                 preview.config(bg=color)
 
         try:
-            ttk.Button(
+            pick_button = ttk.Button(
                 color_frame,
                 text="Pick",
                 command=choose_color,
                 style="Compact.TButton",
-            ).grid(row=0, column=2, padx=5)
-        except Exception:
-            tk.Button(color_frame, text="Pick", command=choose_color).grid(
-                row=0, column=2, padx=5
             )
+            pick_button.grid(row=0, column=2, padx=5)
+        except Exception:
+            pick_button = tk.Button(color_frame, text="Pick", command=choose_color)
+            pick_button.grid(row=0, column=2, padx=5)
+            try:
+                pick_button.configure(bg=palette['button_bg'], fg=palette['button_fg'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+            except Exception:
+                pass
 
         def _update_preview(*_args: object) -> None:
             color_val = color_ent.get().strip()
@@ -322,31 +477,159 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         legend_init = line.get_label() if line is not None else ""
         legend_ent = add_entry(10, "Trace label", legend_init)
 
-        tk.Label(dialog, text="Marker").grid(row=11, column=0, sticky="e")
+        marker_label = tk.Label(dialog, text="Marker")
+        marker_label.grid(row=11, column=0, sticky="e")
+        try:
+            marker_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
         marker_init = line.get_marker() if line is not None else "None"
         marker_var = tk.StringVar(value=marker_init)
         markers = ["None", "o", "s", "^", "D", "*", "x", "+"]
         # Ensure the option menu honours the initial marker selection
-        tk.OptionMenu(dialog, marker_var, marker_var.get(), *markers).grid(
-            row=11, column=1, sticky="w"
-        )
+        marker_widget = tk.OptionMenu(dialog, marker_var, marker_var.get(), *markers)
+        marker_widget.grid(row=11, column=1, sticky="w")
+        try:
+            marker_widget.configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+            marker_widget['menu'].configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+        except Exception:
+            pass
 
         # Scale selection
-        tk.Label(dialog, text="X scale").grid(row=12, column=0, sticky="e")
+        xscale_label = tk.Label(dialog, text="X scale")
+        xscale_label.grid(row=12, column=0, sticky="e")
+        try:
+            xscale_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
         xscale_var = tk.StringVar(value=ax.get_xscale())
-        tk.OptionMenu(dialog, xscale_var, "linear", "log").grid(row=12, column=1, sticky="w")
+        xscale_widget = tk.OptionMenu(dialog, xscale_var, "linear", "log")
+        xscale_widget.grid(row=12, column=1, sticky="w")
+        try:
+            xscale_widget.configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+            xscale_widget['menu'].configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+        except Exception:
+            pass
 
-        tk.Label(dialog, text="Y scale").grid(row=13, column=0, sticky="e")
+        yscale_label = tk.Label(dialog, text="Y scale")
+        yscale_label.grid(row=13, column=0, sticky="e")
+        try:
+            yscale_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
         yscale_var = tk.StringVar(value=ax.get_yscale())
-        tk.OptionMenu(dialog, yscale_var, "linear", "log").grid(row=13, column=1, sticky="w")
+        yscale_widget = tk.OptionMenu(dialog, yscale_var, "linear", "log")
+        yscale_widget.grid(row=13, column=1, sticky="w")
+        try:
+            yscale_widget.configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+            yscale_widget['menu'].configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+        except Exception:
+            pass
 
         xticks_ent = add_entry(14, "X ticks", ", ".join(map(str, ax.get_xticks())))
         yticks_ent = add_entry(15, "Y ticks", ", ".join(map(str, ax.get_yticks())))
 
         major_var = tk.BooleanVar(value=ax.xaxis._major_tick_kw.get("gridOn", False))
-        tk.Checkbutton(dialog, text="Major grid", variable=major_var).grid(row=16, column=0, columnspan=2, sticky="w")
+        major_cb = tk.Checkbutton(dialog, text="Major grid", variable=major_var)
+        major_cb.grid(row=16, column=0, columnspan=2, sticky="w")
         minor_var = tk.BooleanVar(value=ax.xaxis._minor_tick_kw.get("gridOn", False))
-        tk.Checkbutton(dialog, text="Minor grid", variable=minor_var).grid(row=17, column=0, columnspan=2, sticky="w")
+        minor_cb = tk.Checkbutton(dialog, text="Minor grid", variable=minor_var)
+        minor_cb.grid(row=17, column=0, columnspan=2, sticky="w")
+        try:
+            for cb in (major_cb, minor_cb):
+                cb.configure(bg=palette['panel_bg'], fg=palette['text'], selectcolor=palette['panel_bg'], activebackground=palette['panel_bg'], activeforeground=palette['text'])
+        except Exception:
+            pass
+
+        unit_map = {"px": 1.0, "in": dpi, "cm": dpi / 2.54, "mm": dpi / 25.4, "pt": dpi / 72.0}
+        size_units = ("px", "in", "cm", "mm", "pt")
+        if callable(getattr(self, "_get_canvas_size_cb", None)):
+            try:
+                width_px, height_px = self._get_canvas_size_cb()  # type: ignore[call-arg]
+            except Exception:
+                width_px, height_px = figure.get_figwidth() * dpi, figure.get_figheight() * dpi
+        else:
+            widget = self.canvas.get_tk_widget()
+            width_px = widget.winfo_width()
+            height_px = widget.winfo_height()
+            if width_px <= 1 or height_px <= 1:
+                width_px = figure.get_figwidth() * dpi
+                height_px = figure.get_figheight() * dpi
+        size_px = [max(1, int(round(width_px))), max(1, int(round(height_px)))]
+        size_unit_var = tk.StringVar(value="px")
+        width_var = tk.StringVar()
+        height_var = tk.StringVar()
+
+        def _refresh_size_entries(*_args: object) -> None:
+            unit = size_unit_var.get() or "px"
+            factor = unit_map.get(unit, 1.0) or 1.0
+            width_val = size_px[0] / factor
+            height_val = size_px[1] / factor
+            if unit == "px":
+                width_var.set(f"{int(round(width_val))}")
+                height_var.set(f"{int(round(height_val))}")
+            else:
+                width_var.set(f"{width_val:.2f}")
+                height_var.set(f"{height_val:.2f}")
+
+        width_label = tk.Label(dialog, text="Figure width")
+        width_label.grid(row=18, column=0, sticky="e")
+        try:
+            width_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        width_ent = tk.Entry(dialog, textvariable=width_var)
+        try:
+            width_ent.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+        except Exception:
+            pass
+        width_ent.grid(row=18, column=1, padx=5, pady=2, sticky="w")
+        height_label = tk.Label(dialog, text="Figure height")
+        height_label.grid(row=19, column=0, sticky="e")
+        try:
+            height_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        height_ent = tk.Entry(dialog, textvariable=height_var)
+        try:
+            height_ent.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+        except Exception:
+            pass
+        height_ent.grid(row=19, column=1, padx=5, pady=2, sticky="w")
+        units_label = tk.Label(dialog, text="Units")
+        units_label.grid(row=20, column=0, sticky="e")
+        try:
+            units_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        try:
+            size_unit_widget = ttk.Combobox(
+                dialog, values=size_units, textvariable=size_unit_var, state="readonly"
+            )
+            size_unit_widget.grid(row=20, column=1, padx=5, pady=2, sticky="w")
+            try:
+                combo_style = ttk.Style(dialog)
+                combo_style.configure('PlotEditor.TCombobox', fieldbackground=palette['entry_bg'], foreground=palette['text'], background=palette['entry_bg'])
+                size_unit_widget.configure(style='PlotEditor.TCombobox')
+            except Exception:
+                pass
+        except Exception:
+            size_unit_widget = tk.OptionMenu(dialog, size_unit_var, size_unit_var.get(), *size_units)
+            size_unit_widget.grid(row=20, column=1, padx=5, pady=2, sticky="w")
+            try:
+                size_unit_widget.configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+                size_unit_widget['menu'].configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+            except Exception:
+                pass
+
+        try:
+            size_unit_var.trace_add("write", _refresh_size_entries)  # type: ignore[attr-defined]
+        except Exception:
+            try:
+                size_unit_var.trace("w", _refresh_size_entries)  # type: ignore[misc]
+            except Exception:
+                pass
+        _refresh_size_entries()
 
         def _refresh_line_fields(*_args: object) -> None:
             idx = _selected_index()
@@ -407,6 +690,34 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             ax.set_xlabel(xlabel_ent.get())
             ax.set_ylabel(ylabel_ent.get())
 
+            resize_applied = False
+            try:
+                width_input = float(width_ent.get())
+                height_input = float(height_ent.get())
+                unit = size_unit_var.get() or "px"
+                factor = unit_map.get(unit, 1.0) or 1.0
+                width_px = max(1, int(round(width_input * factor)))
+                height_px = max(1, int(round(height_input * factor)))
+                size_px[0], size_px[1] = width_px, height_px
+                if callable(getattr(self, '_set_canvas_size_cb', None)):
+                    try:
+                        self._set_canvas_size_cb(width_px, height_px)  # type: ignore[call-arg]
+                    except Exception:
+                        fig = self.canvas.figure
+                        widget = self.canvas.get_tk_widget()
+                        fig.set_size_inches(width_px / dpi, height_px / dpi, forward=True)
+                        widget.configure(width=width_px, height=height_px)
+                        self.canvas.draw_idle()
+                else:
+                    fig = self.canvas.figure
+                    widget = self.canvas.get_tk_widget()
+                    fig.set_size_inches(width_px / dpi, height_px / dpi, forward=True)
+                    widget.configure(width=width_px, height=height_px)
+                    self.canvas.draw_idle()
+                resize_applied = True
+            except ValueError:
+                pass
+
             # Apply line-specific edits to the selected trace
             try:
                 idx = _selected_index()
@@ -465,6 +776,9 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             except ValueError:
                 pass
 
+            if resize_applied:
+                _refresh_size_entries()
+
             ax.grid(major_var.get(), which="major")
             if minor_var.get():
                 ax.minorticks_on()
@@ -476,16 +790,203 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         try:
             ttk.Button(dialog, text="Apply", command=apply, style="Compact.TButton").grid(
-                row=18, column=0, pady=5
+                row=21, column=0, pady=5
             )
             ttk.Button(
                 dialog, text="Close", command=_on_close, style="Compact.TButton"
-            ).grid(row=18, column=1, pady=5)
+            ).grid(row=21, column=1, pady=5)
         except Exception:
-            tk.Button(dialog, text="Apply", command=apply).grid(row=18, column=0, pady=5)
+            tk.Button(dialog, text="Apply", command=apply).grid(row=21, column=0, pady=5)
             tk.Button(dialog, text="Close", command=_on_close).grid(
-                row=18, column=1, pady=5
+                row=21, column=1, pady=5
             )
+
+        _theme_dialog_widget(dialog)
+
+    def save_figure(self, *args, **kwargs) -> None:  # type: ignore[override]
+        choice = self._prompt_save_style()
+        if choice is None:
+            return
+        if choice == "current":
+            super().save_figure(*args, **kwargs)
+            return
+        fig = self.canvas.figure
+        state = self._capture_figure_state(fig)
+        try:
+            self._apply_export_style(fig, facecolor="white", text_color="black")
+            super().save_figure(*args, **kwargs)
+        finally:
+            self._restore_figure_state(state)
+            try:
+                self.canvas.draw_idle()
+            except Exception:
+                pass
+
+    def _prompt_save_style(self) -> str | None:
+        widget = self.canvas.get_tk_widget()
+        master = widget.winfo_toplevel() if hasattr(widget, "winfo_toplevel") else widget
+        dialog = tk.Toplevel(master)
+        dialog.title("Save Figure")
+        dialog.transient(master)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        palette = {}
+        if callable(getattr(self, '_get_theme_palette', None)):
+            try:
+                palette = self._get_theme_palette() or {}
+            except Exception:
+                palette = {}
+        defaults = {
+            'panel_bg': '#f4f4f4',
+            'text': '#1e1e1e',
+            'button_bg': '#4a90e2',
+            'button_fg': '#ffffff',
+            'button_active_bg': '#357ab7',
+        }
+        palette = {**defaults, **palette}
+        try:
+            dialog.configure(bg=palette['panel_bg'])
+        except Exception:
+            pass
+
+        var = tk.StringVar(value="current")
+        result: dict[str, str | None] = {"choice": None}
+
+        label_prompt = tk.Label(dialog, text="Export figure using:")
+        label_prompt.pack(padx=20, pady=(12, 6), anchor="w")
+        try:
+            label_prompt.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        for label, value in (("Current theme", "current"), ("White background", "white")):
+            rb = tk.Radiobutton(dialog, text=label, value=value, variable=var)
+            rb.pack(anchor="w", padx=30)
+            try:
+                rb.configure(bg=palette['panel_bg'], fg=palette['text'], selectcolor=palette['panel_bg'], activebackground=palette['panel_bg'], activeforeground=palette['text'])
+            except Exception:
+                pass
+
+        btn_frame = tk.Frame(dialog)
+        try:
+            btn_frame.configure(bg=palette['panel_bg'])
+        except Exception:
+            pass
+        btn_frame.pack(pady=10)
+
+        def _confirm() -> None:
+            result["choice"] = var.get()
+            dialog.destroy()
+
+        def _cancel() -> None:
+            dialog.destroy()
+
+        save_btn = tk.Button(btn_frame, text="Save", width=10, command=_confirm)
+        save_btn.pack(side=tk.LEFT, padx=5)
+        cancel_btn = tk.Button(btn_frame, text="Cancel", width=10, command=_cancel)
+        cancel_btn.pack(side=tk.LEFT, padx=5)
+        for btn in (save_btn, cancel_btn):
+            try:
+                btn.configure(bg=palette['button_bg'], fg=palette['button_fg'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+            except Exception:
+                pass
+        dialog.protocol("WM_DELETE_WINDOW", _cancel)
+        dialog.wait_window()
+        return result["choice"]
+
+    def _capture_figure_state(self, fig) -> dict[str, object]:
+        axes_state: list[dict[str, object]] = []
+        for ax in fig.axes:
+            tick_color = None
+            try:
+                lines = ax.xaxis.get_ticklines()
+            except Exception:
+                lines = []
+            if lines:
+                tick_color = lines[0].get_color()
+            if not tick_color:
+                tick_color = ax.xaxis.label.get_color()
+            axes_state.append({
+                "ax": ax,
+                "facecolor": ax.get_facecolor(),
+                "spines": {name: spine.get_edgecolor() for name, spine in ax.spines.items()},
+                "x_label": ax.xaxis.label.get_color(),
+                "y_label": ax.yaxis.label.get_color(),
+                "title": ax.title.get_color() if hasattr(ax.title, "get_color") else ax.title.get_color(),
+                "xtick_colors": [lbl.get_color() for lbl in ax.get_xticklabels()],
+                "ytick_colors": [lbl.get_color() for lbl in ax.get_yticklabels()],
+                "legend": self._capture_legend_state(ax.get_legend()),
+                "tick_color": tick_color,
+            })
+        return {"fig": fig, "facecolor": fig.get_facecolor(), "axes": axes_state}
+
+    def _capture_legend_state(self, legend):
+        if legend is None:
+            return None
+        frame = legend.get_frame()
+        return {
+            "legend": legend,
+            "facecolor": frame.get_facecolor(),
+            "edgecolor": frame.get_edgecolor(),
+            "text_colors": [txt.get_color() for txt in legend.get_texts()],
+        }
+
+    def _apply_export_style(self, fig, facecolor: str, text_color: str) -> None:
+        try:
+            fig.patch.set_facecolor(facecolor)
+        except Exception:
+            pass
+        for ax in fig.axes:
+            ax.set_facecolor(facecolor)
+            for spine in ax.spines.values():
+                spine.set_color(text_color)
+            ax.tick_params(colors=text_color)
+            for tick in list(ax.get_xticklabels()) + list(ax.get_yticklabels()):
+                tick.set_color(text_color)
+            ax.xaxis.label.set_color(text_color)
+            ax.yaxis.label.set_color(text_color)
+            ax.title.set_color(text_color)
+            legend = ax.get_legend()
+            if legend is not None:
+                frame = legend.get_frame()
+                frame.set_facecolor(facecolor)
+                frame.set_edgecolor(text_color)
+                for txt in legend.get_texts():
+                    txt.set_color(text_color)
+
+    def _restore_figure_state(self, state: dict[str, object]) -> None:
+        fig = state.get("fig")
+        if fig is None:
+            return
+        face = state.get("facecolor")
+        try:
+            fig.patch.set_facecolor(face)
+        except Exception:
+            pass
+        for ax_state in state.get("axes", []):
+            ax = ax_state["ax"]
+            ax.set_facecolor(ax_state["facecolor"])
+            for name, color in ax_state["spines"].items():
+                ax.spines[name].set_color(color)
+            tick_color = ax_state.get("tick_color")
+            if tick_color:
+                ax.tick_params(colors=tick_color)
+            ax.xaxis.label.set_color(ax_state["x_label"])
+            ax.yaxis.label.set_color(ax_state["y_label"])
+            ax.title.set_color(ax_state["title"])
+            for tick, color in zip(ax.get_xticklabels(), ax_state["xtick_colors"]):
+                tick.set_color(color)
+            for tick, color in zip(ax.get_yticklabels(), ax_state["ytick_colors"]):
+                tick.set_color(color)
+            legend_state = ax_state.get("legend")
+            if legend_state:
+                legend = legend_state.get("legend")
+                if legend is not None:
+                    frame = legend.get_frame()
+                    frame.set_facecolor(legend_state.get("facecolor"))
+                    frame.set_edgecolor(legend_state.get("edgecolor"))
+                    for txt, color in zip(legend.get_texts(), legend_state.get("text_colors", [])):
+                        txt.set_color(color)
 
 
 class BaselineOptionsDialog(tk.Toplevel):
@@ -651,6 +1152,41 @@ class SpanPeakSelector:
     versions.
     """
 
+    _THEMES: dict[str, dict[str, str]] = {
+        "light": {
+            "bg": "#f4f4f4",
+            "panel_bg": "#ffffff",
+            "text": "#1e1e1e",
+            "accent": "#4a90e2",
+            "plot_face": "#ffffff",
+            "axes_face": "#ffffff",
+            "axes_edge": "#1e1e1e",
+            "toolbar_bg": "#e0e0e0",
+            "entry_bg": "#ffffff",
+            "button_bg": "#4a90e2",
+            "button_fg": "#ffffff",
+            "button_active_bg": "#357ab7",
+        },
+        "dark": {
+            "bg": "#1e1e1e",
+            "panel_bg": "#252526",
+            "text": "#f0f0f0",
+            "accent": "#9c8cd8",
+            "plot_face": "#1e1e1e",
+            "axes_face": "#1e1e1e",
+            "axes_edge": "#f0f0f0",
+            "toolbar_bg": "#2d2d30",
+            "entry_bg": "#2d2d30",
+            "button_bg": "#b39ddb",
+            "button_fg": "#1e1e1e",
+            "button_active_bg": "#9f8ad6",
+        },
+    }
+
+
+    def _get_theme_palette(self) -> dict[str, str]:
+        return dict(self._THEMES.get(self._theme, self._THEMES['light']))
+
     def __init__(self, spectrum=None, labels: list[str] | None = None) -> None:
         """Initialise the selector with zero, one, or more spectra.
 
@@ -753,8 +1289,29 @@ class SpanPeakSelector:
         self._lorentz_table_title = "Lorentzian Fits"
         self._compare_table_title = "Comparison"
         self.metadata_text: str = ""
+        self._theme: str = "light"
+        self._dark_mode_var: tk.BooleanVar | None = None
+        self._updating_theme = False
+        self.toolbar: NavigationToolbarNoSubplots | None = None
+        self.plot_container: tk.Frame | None = None
+        self.panel_container: tk.Frame | None = None
+        self.panel_frame: tk.Frame | None = None
+        self.meta_frame: tk.Frame | None = None
+        self.results_frame: tk.Frame | None = None
+        self.lorentz_frame: tk.Frame | None = None
+        self.compare_frame: tk.Frame | None = None
+        self.batch_frame: tk.Frame | None = None
+        self._button_rows: list[tk.Frame] = []
         self._button_cls: type[tk.Button] | type[ttk.Button] = ttk.Button if hasattr(ttk, 'Button') else tk.Button
         self._button_kwargs: dict[str, object] = {}
+        self.figure_canvas: FigureCanvasTkAgg | None = None
+        self.figure_container: tk.Frame | None = None
+        self.figure_widget: tk.Widget | None = None
+        self._canvas_pixel_size: tuple[int, int] | None = None
+        self._resize_handles: list[tk.Widget] = []
+        self._resize_state: dict[str, int] | None = None
+        self._min_canvas_width = 200
+        self._min_canvas_height = 150
         self.delete_btn: tk.Button | ttk.Button | None = None
         self.export_btn: tk.Button | ttk.Button | None = None
         self.g_btn: tk.Button | ttk.Button | None = None
@@ -953,6 +1510,7 @@ class SpanPeakSelector:
                     command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
         if self.delete_btn is not None:
             state_str = tk.NORMAL if len(self.spectra) > 0 else tk.DISABLED
@@ -1350,6 +1908,7 @@ class SpanPeakSelector:
             param_label = "B"
 
         CHI2_THRESHOLD = 1e-6
+        palette = self._get_theme_palette()
 
         # Perform the initial fit and set up the residual plot and fit line
         params, stats = fit_func(field, intensity, p0=p0)
@@ -1364,14 +1923,23 @@ class SpanPeakSelector:
         self.ax.figure.canvas.draw_idle()
 
         res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
-        if self.plot_frame is not None and isinstance(res_plot, tuple):
+        if isinstance(res_plot, tuple):
             fig_r, _ax_r = res_plot
-            canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)
-            canvas_r.draw()
-            canvas_r.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            self.extra_canvases.append(canvas_r)
-            if self.root is not None:
-                self.root.update_idletasks()
+            self._apply_mpl_theme(palette, fig_r)
+            if self.plot_frame is not None:
+                canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)
+                canvas_r.draw()
+                widget_r = canvas_r.get_tk_widget()
+                try:
+                    widget_r.configure(bg=palette['panel_bg'], highlightthickness=0)
+                except Exception:
+                    pass
+                widget_r.pack(fill=tk.BOTH, expand=True)
+                self.extra_canvases.append(canvas_r)
+                if self.root is not None:
+                    self.root.update_idletasks()
+        elif isinstance(res_plot, Figure):
+            self._apply_mpl_theme(palette, res_plot)
 
         # Allow the user to iterate the fit if the statistics indicate a poor result
         if not auto:
@@ -1428,14 +1996,23 @@ class SpanPeakSelector:
                 line.set_ydata(fit)
                 residuals = stats["residuals"]
                 res_plot = plot_residuals(field, residuals, h_res, show=self.plot_frame is None)
-                if self.plot_frame is not None and isinstance(res_plot, tuple):
+                if isinstance(res_plot, tuple):
                     fig_r, _ax_r = res_plot
-                    canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)
-                    canvas_r.draw()
-                    canvas_r.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-                    self.extra_canvases.append(canvas_r)
-                    if self.root is not None:
-                        self.root.update_idletasks()
+                    self._apply_mpl_theme(palette, fig_r)
+                    if self.plot_frame is not None:
+                        canvas_r = FigureCanvasTkAgg(fig_r, master=self.plot_frame)
+                        canvas_r.draw()
+                        widget_r = canvas_r.get_tk_widget()
+                        try:
+                            widget_r.configure(bg=palette['panel_bg'], highlightthickness=0)
+                        except Exception:
+                            pass
+                        widget_r.pack(fill=tk.BOTH, expand=True)
+                        self.extra_canvases.append(canvas_r)
+                        if self.root is not None:
+                            self.root.update_idletasks()
+                elif isinstance(res_plot, Figure):
+                    self._apply_mpl_theme(palette, res_plot)
                 self.ax.figure.canvas.draw_idle()
 
         result = {
@@ -1513,6 +2090,7 @@ class SpanPeakSelector:
                     command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
         else:
             if self.trace_combo is not None and self.trace_var is not None:
@@ -1531,6 +2109,7 @@ class SpanPeakSelector:
                     command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
 
         if self.delete_btn is not None:
@@ -2261,6 +2840,7 @@ class SpanPeakSelector:
                     command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
         else:
             if self.trace_combo is not None and self.trace_var is not None:
@@ -2279,6 +2859,7 @@ class SpanPeakSelector:
                     command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
 
         if self.delete_btn is not None:
@@ -2361,6 +2942,7 @@ class SpanPeakSelector:
                     command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
         else:
             if self.trace_combo is not None and self.trace_var is not None:
@@ -2379,6 +2961,7 @@ class SpanPeakSelector:
                     command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
 
         if self.delete_btn is not None:
@@ -2580,6 +3163,375 @@ class SpanPeakSelector:
         self.ax.autoscale()
         self.ax.figure.canvas.draw_idle()
 
+    def _get_canvas_pixel_size(self) -> tuple[int, int]:
+        if self._canvas_pixel_size:
+            return self._canvas_pixel_size
+        if self.figure_canvas is not None:
+            fig = self.figure_canvas.figure
+            dpi = fig.dpi
+            return (int(round(fig.get_figwidth() * dpi)), int(round(fig.get_figheight() * dpi)))
+        return (self._min_canvas_width, self._min_canvas_height)
+
+    def _set_canvas_pixel_size(self, width: int, height: int, redraw: bool = True) -> None:
+        if self.figure_canvas is None or self.figure_container is None:
+            return
+        width = max(self._min_canvas_width, int(width))
+        height = max(self._min_canvas_height, int(height))
+        self._canvas_pixel_size = (width, height)
+        try:
+            self.figure_container.config(width=width, height=height)
+        except Exception:
+            pass
+        widget = self.figure_canvas.get_tk_widget()
+        try:
+            widget.configure(width=width, height=height)
+        except Exception:
+            pass
+        fig = self.figure_canvas.figure
+        dpi = fig.dpi
+        try:
+            fig.set_size_inches(width / dpi, height / dpi, forward=True)
+        except Exception:
+            pass
+        if redraw:
+            self.figure_canvas.draw_idle()
+        self._position_resize_handles()
+
+    def _install_resize_handles(self) -> None:
+        container = self.figure_container
+        if container is None:
+            return
+        if getattr(self, "_resize_handles", None):
+            self._position_resize_handles()
+            return
+        highlight_bg = container.cget("highlightbackground") if int(container.cget("highlightthickness") or 0) else ""
+        bg = highlight_bg or container.cget("bg")
+        handles: list[tk.Widget] = []
+        configs = [
+            ("east", {"relx": 1.0, "rely": 0.5, "anchor": "e", "relheight": 1.0, "width": 6}),
+            ("south", {"relx": 0.5, "rely": 1.0, "anchor": "s", "relwidth": 1.0, "height": 6}),
+            ("corner", {"relx": 1.0, "rely": 1.0, "anchor": "se", "width": 14, "height": 14}),
+        ]
+        cursors = {"east": "sb_h_double_arrow", "south": "sb_v_double_arrow", "corner": "size_nw_se"}
+        for mode, opts in configs:
+            handle = tk.Frame(container, bg=bg, cursor=cursors.get(mode, "fleur"))
+            handle.place(**opts)
+            handle.bind("<ButtonPress-1>", lambda event, m=mode: self._start_resize(event, m))
+            handle.bind("<B1-Motion>", lambda event, m=mode: self._perform_resize(event, m))
+            handle.bind("<ButtonRelease-1>", self._finish_resize)
+            handles.append(handle)
+        self._resize_handles = handles
+        container.bind("<Configure>", lambda _event: self._position_resize_handles(), add="+")
+        self._position_resize_handles()
+
+    def _position_resize_handles(self) -> None:
+        for handle in getattr(self, "_resize_handles", []):
+            try:
+                handle.lift()
+            except Exception:
+                pass
+
+    def _start_resize(self, event: tk.Event, mode: str) -> None:
+        container = self.figure_container
+        if container is None:
+            return
+        container.update_idletasks()
+        self._resize_state = {
+            "mode": mode,
+            "start_x": event.x_root,
+            "start_y": event.y_root,
+            "start_width": container.winfo_width(),
+            "start_height": container.winfo_height(),
+        }
+
+    def _perform_resize(self, event: tk.Event, mode: str) -> None:
+        state = self._resize_state
+        if state is None:
+            return
+        dx = event.x_root - state["start_x"]
+        dy = event.y_root - state["start_y"]
+        width = state["start_width"]
+        height = state["start_height"]
+        if mode in ("east", "corner"):
+            width = max(self._min_canvas_width, int(state["start_width"] + dx))
+        if mode in ("south", "corner"):
+            height = max(self._min_canvas_height, int(state["start_height"] + dy))
+        self._set_canvas_pixel_size(width, height)
+
+    def _finish_resize(self, _event: tk.Event) -> None:
+        self._resize_state = None
+        self._position_resize_handles()
+
+    def _toggle_dark_mode(self) -> None:
+        if self._dark_mode_var is None or getattr(self, '_updating_theme', False):
+            return
+        theme = 'dark' if bool(self._dark_mode_var.get()) else 'light'
+        self._apply_theme(theme)
+
+    def _configure_button_style(self, palette: dict[str, str]) -> None:
+        if self.root is None:
+            return
+        button_bg = palette.get('button_bg', palette.get('accent', '#4a90e2'))
+        button_fg = palette.get('button_fg', palette.get('text', '#ffffff'))
+        button_active = palette.get('button_active_bg', button_bg)
+        try:
+            if isinstance(self._button_cls, type) and issubclass(self._button_cls, ttk.Button):
+                style = ttk.Style(self.root)
+                for style_name in ('Modern.TButton', 'Compact.TButton', 'TButton', 'Toolbutton'):
+                    try:
+                        style.configure(style_name, background=button_bg, foreground=button_fg)
+                        style.map(style_name, background=[('pressed', button_active), ('active', button_active), ('!disabled', button_bg)], foreground=[('disabled', '#9a9a9a'), ('!disabled', button_fg)])
+                    except Exception:
+                        continue
+            else:
+                self._button_kwargs['bg'] = button_bg
+                self._button_kwargs['fg'] = button_fg
+                self._button_kwargs['activebackground'] = button_active
+                self._button_kwargs['activeforeground'] = button_fg
+                self._button_kwargs['highlightbackground'] = palette.get('accent', button_bg)
+        except Exception:
+            pass
+
+    def _iter_control_buttons(self) -> list[tk.Widget]:
+        return [
+            self.delete_btn,
+            self.analyze_btn,
+            self.analyse_btn,
+            self.dhpp_btn,
+            self.find_btn,
+            self.find_abs_btn,
+            self.fit_btn,
+            self.integrate_btn,
+            self.baseline_btn,
+            self.compare_btn,
+            self.g_btn,
+            self.area_btn,
+            self.export_btn,
+            self.batch_btn,
+            self.undo_btn,
+        ]
+
+    def _style_toggle_checkbutton(self, widget: tk.Checkbutton) -> None:
+        palette = self._get_theme_palette()
+        try:
+            widget.configure(
+                bg=palette['panel_bg'],
+                fg=palette['text'],
+                selectcolor=palette['panel_bg'],
+                activebackground=palette['panel_bg'],
+                activeforeground=palette['text'],
+            )
+        except Exception:
+            pass
+
+    def _iter_control_buttons(self) -> list[tk.Widget]:
+        return [
+            self.delete_btn,
+            self.analyze_btn,
+            self.analyse_btn,
+            self.dhpp_btn,
+            self.find_btn,
+            self.find_abs_btn,
+            self.fit_btn,
+            self.integrate_btn,
+            self.baseline_btn,
+            self.compare_btn,
+            self.g_btn,
+            self.area_btn,
+            self.export_btn,
+            self.batch_btn,
+            self.undo_btn,
+        ]
+
+    def _apply_theme(self, theme: str) -> None:
+        if self.root is None:
+            self._theme = theme if theme in self._THEMES else 'light'
+            return
+        theme_key = 'dark' if theme == 'dark' else 'light'
+        palette = self._THEMES.get(theme_key, self._THEMES['light'])
+        self._theme = theme_key
+        if self._dark_mode_var is not None and bool(self._dark_mode_var.get()) != (theme_key == 'dark'):
+            self._updating_theme = True
+            try:
+                self._dark_mode_var.set(theme_key == 'dark')
+            finally:
+                self._updating_theme = False
+        button_bg = palette.get('button_bg', palette.get('accent', '#4a90e2'))
+        button_fg = palette.get('button_fg', palette.get('text', '#ffffff'))
+        button_active = palette.get('button_active_bg', button_bg)
+        self._configure_button_style(palette)
+        try:
+            combo_style = ttk.Style(self.root)
+            combo_style.configure('PlotEditor.TCombobox', fieldbackground=palette['entry_bg'], foreground=palette['text'], background=palette['entry_bg'])
+            combo_style.map('PlotEditor.TCombobox', fieldbackground=[('readonly', palette['entry_bg'])], foreground=[('readonly', palette['text'])])
+        except Exception:
+            pass
+        try:
+            self.root.configure(bg=palette['bg'])
+        except Exception:
+            pass
+
+        frames = [
+            self.plot_container,
+            self.plot_frame,
+            self.panel_container,
+            self.panel_frame,
+            self.control_frame,
+            self.meta_frame,
+            self.results_frame,
+            self.lorentz_frame,
+            self.compare_frame,
+            self.batch_frame,
+        ] + getattr(self, '_button_rows', [])
+        for frame in frames:
+            if frame is None:
+                continue
+            try:
+                frame.configure(bg=palette['panel_bg'])
+            except Exception:
+                pass
+            for child in getattr(frame, 'winfo_children', lambda: [])():
+                try:
+                    child.configure(bg=palette['panel_bg'])
+                except Exception:
+                    pass
+                if isinstance(child, tk.Label):
+                    try:
+                        child.configure(bg=palette['panel_bg'], fg=palette['text'])
+                    except Exception:
+                        pass
+                elif isinstance(child, tk.Entry):
+                    try:
+                        child.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+                    except Exception:
+                        pass
+                elif isinstance(child, tk.Button):
+                    try:
+                        child.configure(bg=button_bg, fg=button_fg, activebackground=button_active, activeforeground=button_fg)
+                    except Exception:
+                        pass
+
+        if self.toggle_frame is not None:
+            try:
+                self.toggle_frame.configure(bg=palette['panel_bg'])
+            except Exception:
+                pass
+            for child in self.toggle_frame.winfo_children():
+                try:
+                    child.configure(
+                        bg=palette['panel_bg'],
+                        fg=palette['text'],
+                        selectcolor=palette['panel_bg'],
+                        activebackground=palette['panel_bg'],
+                        activeforeground=palette['text'],
+                    )
+                except Exception:
+                    pass
+
+        for label in (
+            self.meta_label,
+            self.peak_table_label,
+            self.results_table_label,
+            self.lorentz_table_label,
+            self.compare_table_label,
+        ):
+            if label is None:
+                continue
+            try:
+                label.configure(bg=palette['panel_bg'], fg=palette['text'])
+            except Exception:
+                pass
+
+        if isinstance(self.trace_combo, ttk.Combobox):
+            try:
+                self.trace_combo.configure(style='PlotEditor.TCombobox')
+            except Exception:
+                pass
+        elif self.trace_combo is not None:
+            try:
+                self.trace_combo.configure(bg=palette['panel_bg'], fg=palette['text'], activebackground=palette['button_active_bg'], activeforeground=palette['button_fg'])
+            except Exception:
+                pass
+
+        for extra_canvas in getattr(self, 'extra_canvases', []):
+            try:
+                self._apply_mpl_theme(palette, extra_canvas.figure)
+                widget = extra_canvas.get_tk_widget()
+                widget.configure(bg=palette['panel_bg'], highlightthickness=0)
+            except Exception:
+                pass
+
+        if self.figure_container is not None:
+            try:
+                self.figure_container.configure(
+                    bg=palette['panel_bg'],
+                    highlightbackground=palette['accent'],
+                    highlightcolor=palette['accent'],
+                )
+            except Exception:
+                pass
+        if self.figure_widget is not None:
+            try:
+                self.figure_widget.configure(bg=palette['plot_face'])
+            except Exception:
+                pass
+
+        if self.toolbar is not None:
+            try:
+                self.toolbar.update_theme(palette)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+        try:
+            style = ttk.Style(self.root)
+            style.configure('Treeview', background=palette['panel_bg'], fieldbackground=palette['panel_bg'], foreground=palette['text'])
+            style.configure('Treeview.Heading', foreground=palette['text'], background=palette['panel_bg'])
+            style.map('Treeview', background=[('selected', palette['accent'])], foreground=[('selected', palette['text'])])
+        except Exception:
+            pass
+
+        for handle in getattr(self, '_resize_handles', []):
+            try:
+                handle.configure(bg=palette['accent'])
+            except Exception:
+                pass
+        self._position_resize_handles()
+
+        self._apply_mpl_theme(palette)
+
+    def _apply_mpl_theme(self, palette: dict[str, str], fig: Figure | None = None) -> None:
+        if fig is None:
+            if self.figure_canvas is None:
+                return
+            fig = self.figure_canvas.figure
+        try:
+            fig.patch.set_facecolor(palette['plot_face'])
+        except Exception:
+            pass
+        for ax in fig.axes:
+            ax.set_facecolor(palette['axes_face'])
+            for spine in ax.spines.values():
+                spine.set_color(palette['axes_edge'])
+            ax.tick_params(colors=palette['axes_edge'])
+            for tick in list(ax.get_xticklabels()) + list(ax.get_yticklabels()):
+                tick.set_color(palette['axes_edge'])
+            ax.xaxis.label.set_color(palette['axes_edge'])
+            ax.yaxis.label.set_color(palette['axes_edge'])
+            ax.title.set_color(palette['axes_edge'])
+            legend = ax.get_legend()
+            if legend is not None:
+                frame = legend.get_frame()
+                frame.set_facecolor(palette['axes_face'])
+                frame.set_edgecolor(palette['axes_edge'])
+                for txt in legend.get_texts():
+                    txt.set_color(palette['axes_edge'])
+        try:
+            canvas = fig.canvas
+            if canvas is not None:
+                canvas.draw_idle()
+        except Exception:
+            pass
+
     def _on_trace_change(self, _event: object | None = None) -> None:
         """Update state when the user selects a different trace."""
 
@@ -2671,6 +3623,7 @@ class SpanPeakSelector:
                     command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
         if len(self.spectra) == 0:
             # No spectra left – reset state
@@ -2776,6 +3729,7 @@ class SpanPeakSelector:
                     command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
         else:
             if self.trace_combo is not None and self.trace_var is not None:
@@ -2794,6 +3748,7 @@ class SpanPeakSelector:
                     command=lambda i=idx, v=var: self._toggle_trace(i, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
 
         # Keep UI consistent
@@ -2967,6 +3922,14 @@ class SpanPeakSelector:
             file_menu.add_command(label="Exit", command=getattr(self.root, "quit", lambda: None))
 
             view_menu = tk.Menu(menubar, tearoff=0)
+            if self._dark_mode_var is None:
+                self._dark_mode_var = tk.BooleanVar(master=self.root, value=self._theme == 'dark')
+            view_menu.add_checkbutton(
+                label="Dark Mode",
+                variable=self._dark_mode_var,
+                command=self._toggle_dark_mode,
+            )
+            view_menu.add_separator()
             view_menu.add_command(label="Reset View", command=self._view_settings)
 
             help_menu = tk.Menu(menubar, tearoff=0)
@@ -3047,6 +4010,9 @@ class SpanPeakSelector:
 
         self._button_cls = ButtonCls
         self._button_kwargs = dict(button_kwargs)
+        self._dark_mode_var = tk.BooleanVar(master=self.root, value=self._theme == 'dark')
+        palette = self._THEMES.get(self._theme, self._THEMES['light'])
+        self._configure_button_style(palette)
 
         # Basic window housekeeping such as maximising the window if supported.
         self.root.title("SimpleESR")
@@ -3155,6 +4121,8 @@ class SpanPeakSelector:
                 plot_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
             else:
                 plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+            plot_container = plot_frame
+        self.plot_container = plot_container
         self.plot_frame = plot_frame
 
         try:
@@ -3197,11 +4165,16 @@ class SpanPeakSelector:
                 panel.grid(row=0, column=1, sticky="nsew")
             else:
                 panel.pack(side=tk.RIGHT, fill=tk.Y)
+            panel_container = panel
+
+        self.panel_container = panel_container
+        self.panel_frame = panel
 
         # ------------------------------------------------------------------
         # Metadata panel
         meta_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         meta_frame.pack(fill=tk.X, pady=(0, 10))
+        self.meta_frame = meta_frame
         tk.Label(meta_frame, text="Metadata", font=("TkDefaultFont", 10, "bold")).pack(
             anchor="w", padx=5, pady=(5, 0)
         )
@@ -3223,8 +4196,23 @@ class SpanPeakSelector:
         self.ax.set_xlabel("Magnetic Field")
         self.ax.set_ylabel("Intensity")
         self.update_legend()
-        canvas = FigureCanvasTkAgg(fig, master=plot_frame)
-        canvas.draw()
+
+        border_color = palette.get("accent", "#4a90e2")
+        base_bg = plot_frame.cget("bg") if hasattr(plot_frame, "cget") else palette.get("panel_bg", "#f0f0f0")
+        self.figure_container = tk.Frame(
+            plot_frame,
+            bd=2,
+            relief=tk.GROOVE,
+            highlightthickness=2,
+            highlightbackground=border_color,
+            highlightcolor=border_color,
+            bg=base_bg,
+        )
+        self.figure_container.pack_propagate(False)
+        canvas = FigureCanvasTkAgg(fig, master=self.figure_container)
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(fill=tk.BOTH, expand=True)
+
         toolbar = NavigationToolbarNoSubplots(
             canvas,
             plot_frame,
@@ -3232,11 +4220,30 @@ class SpanPeakSelector:
             update_legend=self.update_legend,
             set_label=self._set_label,
             get_trace_line=lambda i: self.trace_lines[i] if 0 <= i < len(self.trace_lines) else None,
+            get_canvas_size=self._get_canvas_pixel_size,
+            set_canvas_size=self._set_canvas_pixel_size,
+            get_theme_palette=lambda: self._THEMES.get(self._theme, self._THEMES['light']),
             pack_toolbar=False,
         )
         toolbar.update()
         toolbar.pack(side=tk.TOP, fill=tk.X)
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.toolbar = toolbar
+        self.figure_container.pack(side=tk.TOP, anchor="nw", padx=5, pady=5)
+        try:
+            self.figure_container.update_idletasks()
+        except Exception:
+            pass
+
+        self.figure_canvas = canvas
+        self.figure_widget = canvas_widget
+        self._resize_handles = []
+        self._canvas_pixel_size = None
+
+        initial_width = int(round(fig.get_figwidth() * fig.dpi))
+        initial_height = int(round(fig.get_figheight() * fig.dpi))
+        self._set_canvas_pixel_size(initial_width, initial_height, redraw=False)
+        canvas.draw()
+        self._install_resize_handles()
 
         # ------------------------------------------------------------------
         # Controls
@@ -3273,6 +4280,7 @@ class SpanPeakSelector:
                     command=lambda idx=i, v=var: self._toggle_trace(idx, v.get()),
                 )
                 chk.pack(anchor="w")
+                self._style_toggle_checkbutton(chk)
                 self.trace_vars.append(var)
             self.toggle_frame = toggle_frame
 
@@ -3356,6 +4364,7 @@ class SpanPeakSelector:
 
         button_row3 = tk.Frame(control_frame)
         button_row3.pack(fill=tk.X, padx=5, pady=(2, 5))
+        self._button_rows = [button_row1, button_row2, button_row3]
 
         self.g_btn = ButtonCls(
             button_row3,
@@ -3421,6 +4430,7 @@ class SpanPeakSelector:
         # Results tables
         result_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         result_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.results_frame = result_frame
         self.results_table_label = tk.Label(
             result_frame, text=self._analysis_table_title, font=("TkDefaultFont", 10, "bold")
         )
@@ -3443,6 +4453,7 @@ class SpanPeakSelector:
 
         lorentz_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         lorentz_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.lorentz_frame = lorentz_frame
         self.lorentz_table_label = tk.Label(
             lorentz_frame, text=self._lorentz_table_title, font=("TkDefaultFont", 10, "bold")
         )
@@ -3468,6 +4479,7 @@ class SpanPeakSelector:
 
         compare_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         compare_frame.pack(fill=tk.BOTH, expand=True)
+        self.compare_frame = compare_frame
         self.compare_table_label = tk.Label(
             compare_frame, text=self._compare_table_title, font=("TkDefaultFont", 10, "bold")
         )
@@ -3489,6 +4501,7 @@ class SpanPeakSelector:
 
         batch_frame = tk.Frame(panel, bd=2, relief=tk.GROOVE)
         batch_frame.pack(fill=tk.BOTH, expand=True)
+        self.batch_frame = batch_frame
         tk.Label(
             batch_frame, text="Batch Results", font=("TkDefaultFont", 10, "bold")
         ).pack(anchor="w", padx=5, pady=(5, 0))
@@ -3507,6 +4520,8 @@ class SpanPeakSelector:
             self.batch_tree.heading(col, text=text)
             self.batch_tree.column(col, anchor=tk.CENTER)
         self.batch_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
+
+        self._apply_theme(self._theme)
 
         # Ensure the tables reflect any results already calculated before the GUI
         self._refresh_tables()
@@ -3527,4 +4542,3 @@ def main() -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     main()
-
