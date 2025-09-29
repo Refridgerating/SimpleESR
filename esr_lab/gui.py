@@ -22,6 +22,7 @@ try:  # pragma: no cover - optional dependency
     import ttkbootstrap  # type: ignore
 except Exception:  # pragma: no cover - handled at runtime
     ttkbootstrap = None
+import matplotlib as mpl
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -34,6 +35,7 @@ from scipy.integrate import cumulative_trapezoid
 from scipy.signal import find_peaks
 import sympy as sp
 import copy
+import math
 
 from .analysis import (
     calc_fwhm,
@@ -559,6 +561,30 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         size_unit_var = tk.StringVar(value="px")
         width_var = tk.StringVar()
         height_var = tk.StringVar()
+        base_size_px = (size_px[0], size_px[1])
+        scale_var = tk.StringVar(value="1.00")
+        scale_state: dict[str, bool] = {"manual": False}
+
+        def _set_scale_var(value: float) -> None:
+            try:
+                if not math.isfinite(value) or value <= 0:
+                    raise ValueError
+            except Exception:
+                value = 1.0
+            scale_state["manual"] = False
+            scale_var.set(f"{value:.2f}")
+
+        def _compute_scale(width_val: float, height_val: float) -> float:
+            try:
+                base_w = base_size_px[0] or 1.0
+                base_h = base_size_px[1] or 1.0
+                width_ratio = width_val / base_w
+                height_ratio = height_val / base_h
+                if width_ratio <= 0 or height_ratio <= 0:
+                    return 1.0
+                return math.sqrt(width_ratio * height_ratio)
+            except Exception:
+                return 1.0
 
         def _refresh_size_entries(*_args: object) -> None:
             unit = size_unit_var.get() or "px"
@@ -571,6 +597,8 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             else:
                 width_var.set(f"{width_val:.2f}")
                 height_var.set(f"{height_val:.2f}")
+            if not scale_state.get("manual"):
+                _set_scale_var(_compute_scale(size_px[0], size_px[1]))
 
         width_label = tk.Label(dialog, text="Figure width")
         width_label.grid(row=18, column=0, sticky="e")
@@ -630,6 +658,163 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             except Exception:
                 pass
         _refresh_size_entries()
+
+        scale_label = tk.Label(dialog, text="Scale factor")
+        scale_label.grid(row=21, column=0, sticky="e")
+        try:
+            scale_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        scale_ent = tk.Entry(dialog, textvariable=scale_var)
+        try:
+            scale_ent.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+        except Exception:
+            pass
+        scale_ent.grid(row=21, column=1, padx=5, pady=2, sticky="w")
+        scale_ent.bind("<Key>", lambda *_: scale_state.__setitem__("manual", True))
+
+        def _get_fontsize_safe(obj) -> float | None:
+            try:
+                return float(obj.get_fontsize())
+            except Exception:
+                return None
+
+        def _format_font(value: float | None) -> str:
+            return "" if value is None else f"{value:.2f}"
+
+        title_font_base = _get_fontsize_safe(ax.title)
+        xlabel_font_base = _get_fontsize_safe(ax.xaxis.label)
+        ylabel_font_base = _get_fontsize_safe(ax.yaxis.label)
+        axis_label_base = xlabel_font_base if xlabel_font_base is not None else ylabel_font_base
+        tick_font_base = None
+        xtick_labels = list(ax.get_xticklabels())
+        if xtick_labels:
+            tick_font_base = _get_fontsize_safe(xtick_labels[0])
+        else:
+            ytick_labels = list(ax.get_yticklabels())
+            if ytick_labels:
+                tick_font_base = _get_fontsize_safe(ytick_labels[0])
+        legend_preview = ax.get_legend()
+        legend_font_base = None
+        legend_title_base = None
+        if legend_preview is not None:
+            texts = legend_preview.get_texts()
+            for txt in texts:
+                legend_font_base = _get_fontsize_safe(txt)
+                if legend_font_base is not None:
+                    break
+            legend_title = legend_preview.get_title()
+            if legend_title is not None:
+                legend_title_base = _get_fontsize_safe(legend_title)
+                if legend_font_base is None and legend_title_base is not None:
+                    legend_font_base = legend_title_base
+
+        fonts_label = tk.Label(dialog, text="Font sizes")
+        fonts_label.grid(row=22, column=0, columnspan=3, sticky="w", pady=(8, 2))
+        try:
+            fonts_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+
+        title_font_var = tk.StringVar(value=_format_font(title_font_base))
+        title_font_label = tk.Label(dialog, text="Title font")
+        title_font_label.grid(row=23, column=0, sticky="e")
+        try:
+            title_font_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        title_font_ent = tk.Entry(dialog, textvariable=title_font_var)
+        try:
+            title_font_ent.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+        except Exception:
+            pass
+        title_font_ent.grid(row=23, column=1, padx=5, pady=2, sticky="w")
+        title_scale_var = tk.BooleanVar(value=False)
+        title_scale_cb = tk.Checkbutton(dialog, text="Use scale factor", variable=title_scale_var)
+        title_scale_cb.grid(row=23, column=2, sticky="w")
+
+        axis_label_font_var = tk.StringVar(value=_format_font(axis_label_base))
+        axis_font_label = tk.Label(dialog, text="Axis label font")
+        axis_font_label.grid(row=24, column=0, sticky="e")
+        try:
+            axis_font_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        axis_font_ent = tk.Entry(dialog, textvariable=axis_label_font_var)
+        try:
+            axis_font_ent.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+        except Exception:
+            pass
+        axis_font_ent.grid(row=24, column=1, padx=5, pady=2, sticky="w")
+        axis_scale_var = tk.BooleanVar(value=False)
+        axis_scale_cb = tk.Checkbutton(dialog, text="Use scale factor", variable=axis_scale_var)
+        axis_scale_cb.grid(row=24, column=2, sticky="w")
+
+        tick_font_var = tk.StringVar(value=_format_font(tick_font_base))
+        tick_font_label = tk.Label(dialog, text="Tick label font")
+        tick_font_label.grid(row=25, column=0, sticky="e")
+        try:
+            tick_font_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        tick_font_ent = tk.Entry(dialog, textvariable=tick_font_var)
+        try:
+            tick_font_ent.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+        except Exception:
+            pass
+        tick_font_ent.grid(row=25, column=1, padx=5, pady=2, sticky="w")
+        tick_scale_var = tk.BooleanVar(value=False)
+        tick_scale_cb = tk.Checkbutton(dialog, text="Use scale factor", variable=tick_scale_var)
+        tick_scale_cb.grid(row=25, column=2, sticky="w")
+
+        legend_font_var = tk.StringVar(value=_format_font(legend_font_base))
+        legend_font_label = tk.Label(dialog, text="Legend font")
+        legend_font_label.grid(row=26, column=0, sticky="e")
+        try:
+            legend_font_label.configure(bg=palette['panel_bg'], fg=palette['text'])
+        except Exception:
+            pass
+        legend_font_ent = tk.Entry(dialog, textvariable=legend_font_var)
+        try:
+            legend_font_ent.configure(bg=palette['entry_bg'], fg=palette['text'], insertbackground=palette['text'])
+        except Exception:
+            pass
+        legend_font_ent.grid(row=26, column=1, padx=5, pady=2, sticky="w")
+        legend_scale_var = tk.BooleanVar(value=False)
+        legend_scale_cb = tk.Checkbutton(dialog, text="Use scale factor", variable=legend_scale_var)
+        legend_scale_cb.grid(row=26, column=2, sticky="w")
+
+        if title_font_base is None:
+            try:
+                title_font_ent.configure(state=tk.DISABLED)
+                title_scale_cb.configure(state=tk.DISABLED)
+            except Exception:
+                pass
+        if axis_label_base is None:
+            try:
+                axis_font_ent.configure(state=tk.DISABLED)
+                axis_scale_cb.configure(state=tk.DISABLED)
+            except Exception:
+                pass
+        if tick_font_base is None:
+            try:
+                tick_font_ent.configure(state=tk.DISABLED)
+                tick_scale_cb.configure(state=tk.DISABLED)
+            except Exception:
+                pass
+        if legend_font_base is None and legend_title_base is None:
+            try:
+                legend_font_ent.configure(state=tk.DISABLED)
+                legend_scale_cb.configure(state=tk.DISABLED)
+            except Exception:
+                pass
+
+        def _parse_font_value(value: str) -> float | None:
+            try:
+                size = float(value)
+            except (TypeError, ValueError):
+                return None
+            return size if size > 0 else None
 
         def _refresh_line_fields(*_args: object) -> None:
             idx = _selected_index()
@@ -776,7 +961,74 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             except ValueError:
                 pass
 
+            try:
+                scale_value = float(scale_var.get())
+                if not math.isfinite(scale_value) or scale_value <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                scale_value = None
+
+            if title_scale_var.get() and scale_value is not None and title_font_base is not None:
+                title_target = title_font_base * scale_value
+                title_font_var.set(f"{title_target:.2f}")
+            else:
+                title_target = _parse_font_value(title_font_var.get().strip())
+            if title_target is not None:
+                try:
+                    ax.title.set_fontsize(title_target)
+                except Exception:
+                    pass
+
+            if axis_scale_var.get() and scale_value is not None and axis_label_base is not None:
+                axis_target = axis_label_base * scale_value
+                axis_label_font_var.set(f"{axis_target:.2f}")
+            else:
+                axis_target = _parse_font_value(axis_label_font_var.get().strip())
+            if axis_target is not None:
+                try:
+                    ax.xaxis.label.set_fontsize(axis_target)
+                except Exception:
+                    pass
+                try:
+                    ax.yaxis.label.set_fontsize(axis_target)
+                except Exception:
+                    pass
+
+            tick_labels = list(ax.get_xticklabels()) + list(ax.get_yticklabels())
+            if tick_scale_var.get() and scale_value is not None and tick_font_base is not None:
+                tick_target = tick_font_base * scale_value
+                tick_font_var.set(f"{tick_target:.2f}")
+            else:
+                tick_target = _parse_font_value(tick_font_var.get().strip())
+            if tick_target is not None:
+                for lbl in tick_labels:
+                    try:
+                        lbl.set_fontsize(tick_target)
+                    except Exception:
+                        pass
+
+            legend_obj = ax.get_legend()
+            legend_base = legend_font_base if legend_font_base is not None else legend_title_base
+            if legend_scale_var.get() and scale_value is not None and legend_base is not None:
+                legend_target = legend_base * scale_value
+                legend_font_var.set(f"{legend_target:.2f}")
+            else:
+                legend_target = _parse_font_value(legend_font_var.get().strip())
+            if legend_obj is not None and legend_target is not None:
+                for txt in legend_obj.get_texts():
+                    try:
+                        txt.set_fontsize(legend_target)
+                    except Exception:
+                        pass
+                legend_title = legend_obj.get_title()
+                if legend_title is not None and legend_title.get_text():
+                    try:
+                        legend_title.set_fontsize(legend_target)
+                    except Exception:
+                        pass
+
             if resize_applied:
+                scale_state["manual"] = False
                 _refresh_size_entries()
 
             ax.grid(major_var.get(), which="major")
@@ -790,15 +1042,15 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         try:
             ttk.Button(dialog, text="Apply", command=apply, style="Compact.TButton").grid(
-                row=21, column=0, pady=5
+                row=27, column=0, pady=5
             )
             ttk.Button(
                 dialog, text="Close", command=_on_close, style="Compact.TButton"
-            ).grid(row=21, column=1, pady=5)
+            ).grid(row=27, column=1, pady=5)
         except Exception:
-            tk.Button(dialog, text="Apply", command=apply).grid(row=21, column=0, pady=5)
+            tk.Button(dialog, text="Apply", command=apply).grid(row=27, column=0, pady=5)
             tk.Button(dialog, text="Close", command=_on_close).grid(
-                row=21, column=1, pady=5
+                row=27, column=1, pady=5
             )
 
         _theme_dialog_widget(dialog)
@@ -810,12 +1062,33 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
         if choice == "current":
             super().save_figure(*args, **kwargs)
             return
+
+        style_options = {
+            "white": {"facecolor": "white", "text_color": "black", "transparent": False},
+            "transparent": {"facecolor": "none", "text_color": None, "transparent": True},
+        }
+        style = style_options.get(choice)
+        if style is None:
+            super().save_figure(*args, **kwargs)
+            return
+
         fig = self.canvas.figure
         state = self._capture_figure_state(fig)
+        sentinel = object()
+        previous_transparent = sentinel
         try:
-            self._apply_export_style(fig, facecolor="white", text_color="black")
+            self._apply_export_style(
+                fig,
+                facecolor=style["facecolor"],
+                text_color=style["text_color"],
+            )
+            if style["transparent"]:
+                previous_transparent = mpl.rcParams.get("savefig.transparent")
+                mpl.rcParams["savefig.transparent"] = True
             super().save_figure(*args, **kwargs)
         finally:
+            if previous_transparent is not sentinel:
+                mpl.rcParams["savefig.transparent"] = previous_transparent
             self._restore_figure_state(state)
             try:
                 self.canvas.draw_idle()
@@ -859,7 +1132,11 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             label_prompt.configure(bg=palette['panel_bg'], fg=palette['text'])
         except Exception:
             pass
-        for label, value in (("Current theme", "current"), ("White background", "white")):
+        for label, value in (
+            ("Current theme", "current"),
+            ("White background", "white"),
+            ("Transparent background", "transparent"),
+        ):
             rb = tk.Radiobutton(dialog, text=label, value=value, variable=var)
             rb.pack(anchor="w", padx=30)
             try:
@@ -931,28 +1208,33 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
             "text_colors": [txt.get_color() for txt in legend.get_texts()],
         }
 
-    def _apply_export_style(self, fig, facecolor: str, text_color: str) -> None:
+    def _apply_export_style(self, fig, facecolor: str, text_color: str | None) -> None:
         try:
             fig.patch.set_facecolor(facecolor)
         except Exception:
             pass
         for ax in fig.axes:
-            ax.set_facecolor(facecolor)
-            for spine in ax.spines.values():
-                spine.set_color(text_color)
-            ax.tick_params(colors=text_color)
-            for tick in list(ax.get_xticklabels()) + list(ax.get_yticklabels()):
-                tick.set_color(text_color)
-            ax.xaxis.label.set_color(text_color)
-            ax.yaxis.label.set_color(text_color)
-            ax.title.set_color(text_color)
+            try:
+                ax.set_facecolor(facecolor)
+            except Exception:
+                pass
+            if text_color is not None:
+                for spine in ax.spines.values():
+                    spine.set_color(text_color)
+                ax.tick_params(colors=text_color)
+                for tick in list(ax.get_xticklabels()) + list(ax.get_yticklabels()):
+                    tick.set_color(text_color)
+                ax.xaxis.label.set_color(text_color)
+                ax.yaxis.label.set_color(text_color)
+                ax.title.set_color(text_color)
             legend = ax.get_legend()
             if legend is not None:
                 frame = legend.get_frame()
                 frame.set_facecolor(facecolor)
-                frame.set_edgecolor(text_color)
-                for txt in legend.get_texts():
-                    txt.set_color(text_color)
+                if text_color is not None:
+                    frame.set_edgecolor(text_color)
+                    for txt in legend.get_texts():
+                        txt.set_color(text_color)
 
     def _restore_figure_state(self, state: dict[str, object]) -> None:
         fig = state.get("fig")
