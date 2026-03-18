@@ -9,6 +9,7 @@ are shown in a small table on the right hand side of the window.
 
 from __future__ import annotations
 
+from concurrent.futures import Future
 from pathlib import Path
 import csv
 import tkinter as tk
@@ -30,7 +31,7 @@ from matplotlib import colors as mcolors
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
-from typing import Callable
+from typing import Any, Callable
 from scipy.integrate import cumulative_trapezoid
 from scipy.signal import find_peaks
 import sympy as sp
@@ -51,13 +52,28 @@ from .analysis import (
 )
 from .io import ESRLoader
 from .plotter import plot_residuals
+from .services import analyze_spectrum
 from .spectrum import ESRSpectrum
+from .ui import AsyncTaskRunner
 
 
 def _filter_ticks(ticks: list[float], lower: float, upper: float) -> list[float]:
     """Return only tick locations within the provided axis limits."""
 
     return [t for t in ticks if lower <= t <= upper]
+
+
+class _FallbackBooleanVar:
+    """Tiny stand-in for ``tk.BooleanVar`` in headless/test doubles."""
+
+    def __init__(self, value: bool = False) -> None:
+        self._value = bool(value)
+
+    def get(self) -> bool:
+        return bool(self._value)
+
+    def set(self, value: object) -> None:
+        self._value = bool(value)
 
 
 class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
@@ -194,9 +210,10 @@ class NavigationToolbarNoSubplots(NavigationToolbar2Tk):
 
         idx = self.get_active_index()
         # Prefer explicit callback if provided
-        if callable(self.get_trace_line):
+        get_trace_line = getattr(self, "get_trace_line", None)
+        if callable(get_trace_line):
             try:
-                line = self.get_trace_line(idx)
+                line = get_trace_line(idx)
                 if isinstance(line, Line2D):
                     return line
             except Exception:
@@ -1572,7 +1589,7 @@ class SpanPeakSelector:
         self._compare_table_title = "Comparison"
         self.metadata_text: str = ""
         self._theme: str = "light"
-        self._dark_mode_var: tk.BooleanVar | None = None
+        self._dark_mode_var: object | None = None
         self._updating_theme = False
         self.toolbar: NavigationToolbarNoSubplots | None = None
         self.plot_container: tk.Frame | None = None
@@ -1601,6 +1618,8 @@ class SpanPeakSelector:
         self.batch_btn: tk.Button | ttk.Button | None = None
         self.undo_btn: tk.Button | ttk.Button | None = None
         self._history: list[dict[str, object]] = []
+        self._task_runner: AsyncTaskRunner | None = None
+        self._pipeline_future: Future | None = None
         # Keep track of which peak (1 or 2) the user is analysing.
         # Default to the first peak so headless usage remains functional
         # without invoking the interactive prompt.
@@ -2482,6 +2501,281 @@ class SpanPeakSelector:
             )
 
     # ------------------------------------------------------------------
+    def _set_active_trace(self, index: int) -> None:
+        """Point active state references to the requested trace index."""
+
+        if not (0 <= index < len(self.spectra)):
+            return
+        self.current = index
+        self.spectrum = self.spectra[index]
+        self.results = self.results_all[index]
+        self.lorentz_results = self.lorentz_all[index]
+        self.ranges = self.ranges_all[index]
+        self.auto_peaks = self.auto_peaks_all[index]
+        self.abs_peaks = self.abs_peaks_all[index]
+
+    def _get_task_runner(self) -> AsyncTaskRunner:
+        """Lazily create a background task runner for heavy analysis."""
+
+        if self._task_runner is None:
+            self._task_runner = AsyncTaskRunner(
+                max_workers=2,
+                thread_name_prefix="simpleesr-gui",
+            )
+        return self._task_runner
+
+    def _pipeline_frequency(self, spectrum: ESRSpectrum) -> float | None:
+        """Extract microwave frequency from metadata if available."""
+
+        meta = getattr(spectrum, "metadata", None)
+        if not isinstance(meta, dict):
+            return None
+        freq = meta.get("Frequency")
+        if freq is None:
+            return None
+        try:
+            return float(freq)
+        except Exception:
+            return None
+
+    def _compute_pipeline_for_indices(
+        self,
+        indices: list[int],
+    ) -> tuple[list[tuple[int, dict[str, Any]]], list[str]]:
+        """Run headless analysis pipeline for selected trace indices."""
+
+        outputs: list[tuple[int, dict[str, Any]]] = []
+        errors: list[str] = []
+
+        for idx in indices:
+            if not (0 <= idx < len(self.spectra)):
+                errors.append(f"Trace {idx + 1}: invalid index")
+                continue
+            spectrum = self.spectra[idx]
+            label = self.labels[idx] if idx < len(self.labels) else f"Trace {idx + 1}"
+            try:
+                payload = analyze_spectrum(
+                    spectrum,
+                    expected=4,
+                    method="auto",
+                    frequency_ghz=self._pipeline_frequency(spectrum),
+                )
+                outputs.append((idx, payload))
+            except Exception as exc:
+                errors.append(f"{label}: {exc}")
+
+        return outputs, errors
+
+    def _apply_pipeline_payload(self, index: int, payload: dict[str, Any]) -> None:
+        """Map a pipeline result payload into GUI state containers."""
+
+        if not (0 <= index < len(self.spectra)):
+            return
+
+        spectrum = self.spectra[index]
+        field = np.asarray(spectrum.field, dtype=float)
+        intensity = np.asarray(spectrum.intensity, dtype=float)
+
+        peaks_raw = payload.get("peaks", [])
+        pair_peaks: list[tuple[int, int]] = []
+        abs_peaks: list[int] = []
+        if isinstance(peaks_raw, list):
+            if peaks_raw and isinstance(peaks_raw[0], (tuple, list)):
+                for item in peaks_raw:
+                    if not isinstance(item, (tuple, list)) or len(item) < 2:
+                        continue
+                    try:
+                        pair_peaks.append((int(item[0]), int(item[1])))
+                    except Exception:
+                        continue
+            else:
+                for item in peaks_raw:
+                    try:
+                        abs_peaks.append(int(item))
+                    except Exception:
+                        continue
+
+        self.auto_peaks_all[index] = pair_peaks
+        self.abs_peaks_all[index] = abs_peaks
+        self.ranges_all[index] = []
+
+        analysis_rows: list[dict[str, float | str | int]] = []
+        widths = payload.get("widths", [])
+        if isinstance(widths, list):
+            for item in widths:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    peak = int(item.get("peak", 0))
+                    pos_idx = int(item.get("pos_idx", -1))
+                    neg_idx = int(item.get("neg_idx", -1))
+                except Exception:
+                    continue
+                if not (0 <= pos_idx < len(field) and 0 <= neg_idx < len(field)):
+                    continue
+                pos_x = float(field[pos_idx])
+                neg_x = float(field[neg_idx])
+                pos_y = float(intensity[pos_idx])
+                neg_y = float(intensity[neg_idx])
+                try:
+                    dhpp = float(item.get("peak_to_peak", 0.0))
+                    fwhm = float(item.get("fwhm", 0.0))
+                except Exception:
+                    continue
+
+                analysis_rows.append(
+                    {
+                        "analysis": "ΔH_pp",
+                        "peak": peak,
+                        "pos_x": pos_x,
+                        "pos_y": pos_y,
+                        "neg_x": neg_x,
+                        "neg_y": neg_y,
+                        "width": dhpp,
+                    }
+                )
+                analysis_rows.append(
+                    {
+                        "analysis": "FWHM",
+                        "peak": peak,
+                        "pos_x": pos_x,
+                        "pos_y": pos_y,
+                        "neg_x": neg_x,
+                        "neg_y": neg_y,
+                        "width": fwhm,
+                    }
+                )
+
+        self.results_all[index] = analysis_rows
+
+        fit_rows: list[dict[str, float | str | int]] = []
+        fits = payload.get("fits", [])
+        if isinstance(fits, list):
+            for item in fits:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    row: dict[str, float | str | int] = {
+                        "analysis": "Lorentzian",
+                        "peak": int(item.get("peak", 0)),
+                        "h_res": float(item.get("h_res", 0.0)),
+                        "delta": float(item.get("delta", 0.0)),
+                        "A": float(item.get("A", 0.0)),
+                        "B": float(item.get("B", 0.0)),
+                        "kind": str(item.get("kind", "derivative")),
+                    }
+                except Exception:
+                    continue
+                for optional_key in ("g", "g_err", "area", "area_err", "chi2", "stderr"):
+                    if optional_key in item:
+                        row[optional_key] = item[optional_key]
+                fit_rows.append(row)
+
+        self.lorentz_all[index] = fit_rows
+
+    def _apply_pipeline_results(
+        self,
+        indices: list[int],
+        outputs: list[tuple[int, dict[str, Any]]],
+        errors: list[str],
+        action: str,
+    ) -> None:
+        """Write pipeline outputs into GUI state and refresh the view."""
+
+        for idx, payload in outputs:
+            self._apply_pipeline_payload(idx, payload)
+
+        if indices:
+            self._set_active_trace(indices[0])
+        self._refresh_tables()
+
+        if not errors:
+            return
+        if self.root is None:
+            print(f"[{action}] Completed with errors: {'; '.join(errors)}")
+            return
+        messagebox.showwarning(action, "\n".join(errors))
+
+    def _run_pipeline_for_indices(self, indices: list[int], action: str) -> None:
+        """Execute pipeline for selected traces, asynchronously when GUI is active."""
+
+        if not indices:
+            return
+
+        if self.root is None:
+            outputs, errors = self._compute_pipeline_for_indices(indices)
+            self._apply_pipeline_results(indices, outputs, errors, action)
+            return
+
+        if self._pipeline_future is not None and not self._pipeline_future.done():
+            messagebox.showinfo(action, "Analysis is already running.")
+            return
+
+        progress_win: tk.Toplevel | None = None
+        progress_bar: ttk.Progressbar | None = None
+        status_label: tk.Label | None = None
+        try:
+            progress_win = tk.Toplevel(self.root)
+            progress_win.title(action)
+            status_label = tk.Label(progress_win, text=f"Processing {len(indices)} trace(s)...")
+            status_label.pack(padx=10, pady=(10, 5))
+            progress_bar = ttk.Progressbar(
+                progress_win,
+                orient=tk.HORIZONTAL,
+                mode="indeterminate",
+                length=320,
+            )
+            progress_bar.pack(padx=10, pady=(0, 10))
+            progress_bar.start(10)
+        except Exception:
+            progress_win = None
+            progress_bar = None
+            status_label = None
+
+        self._pipeline_future = self._get_task_runner().submit(
+            self._compute_pipeline_for_indices,
+            list(indices),
+        )
+
+        def _finalize(outputs: list[tuple[int, dict[str, Any]]], errors: list[str]) -> None:
+            if progress_bar is not None:
+                try:
+                    progress_bar.stop()
+                except Exception:
+                    pass
+            if status_label is not None:
+                try:
+                    status_label.config(text="Done")
+                except Exception:
+                    pass
+            if progress_win is not None:
+                try:
+                    progress_win.destroy()
+                except Exception:
+                    pass
+            self._pipeline_future = None
+            self._apply_pipeline_results(indices, outputs, errors, action)
+
+        def _poll() -> None:
+            future = self._pipeline_future
+            if future is None:
+                return
+            if not future.done():
+                try:
+                    if self.root is not None:
+                        self.root.after(100, _poll)
+                except Exception:
+                    pass
+                return
+            try:
+                outputs, errors = future.result()
+            except Exception as exc:
+                outputs, errors = [], [str(exc)]
+            _finalize(outputs, errors)
+
+        self.root.after(100, _poll)
+
+    # ------------------------------------------------------------------
     def calculate_g(self, quiet: bool = False) -> None:
         """Compute the g-factor for fitted peaks using metadata frequency.
 
@@ -2521,23 +2815,12 @@ class SpanPeakSelector:
 
     # ------------------------------------------------------------------
     def analyze_spectra(self) -> None:
-        """Run peak finding, linewidth, fitting and g-factor analysis."""
+        """Run the headless analysis pipeline for the active trace."""
 
-        try:
-            # Suppress informational popups during automated pipeline
-            self._silent_auto = True
-            self.peak_finder(auto=True)
-            self.start_peak_to_peak(auto=True)
-            self.start_analysis(auto=True)
-            self.fit_lorentzian(auto=True)
-            self.calculate_g(quiet=True)
-        except Exception as exc:
-            messagebox.showerror("Analyze Spectra", str(exc))
-        finally:
-            try:
-                del self._silent_auto
-            except Exception:
-                self._silent_auto = False
+        if not self.spectra:
+            return
+        self._save_state()
+        self._run_pipeline_for_indices([self.current], "Analyze Spectra")
 
     # ------------------------------------------------------------------
     def _select_delete_traces(self) -> list[int] | None:
@@ -2733,7 +3016,7 @@ class SpanPeakSelector:
 
     # ------------------------------------------------------------------
     def batch_process(self) -> None:
-        """Automatically analyse all loaded spectra with progress feedback."""
+        """Automatically analyse selected spectra via pipeline workers."""
 
         if not self.spectra:
             return
@@ -2742,85 +3025,8 @@ class SpanPeakSelector:
         if not indices:
             return
 
-        had_silent = hasattr(self, "_silent_auto")
-        previous_silent = getattr(self, "_silent_auto", False)
-        self._silent_auto = True
-
-        total = len(indices)
-        progress_win = None
-        progress_bar = None
-        status_label = None
-        errors: list[str] = []
-
-        if self.root is not None:
-            try:
-                progress_win = tk.Toplevel(self.root)
-                progress_win.title("Batch Process")
-                status_label = tk.Label(progress_win, text="Processing spectra...")
-                status_label.pack(padx=10, pady=10)
-                progress_bar = ttk.Progressbar(
-                    progress_win, orient=tk.HORIZONTAL, length=300, mode="determinate"
-                )
-                progress_bar.pack(padx=10, pady=(0, 10))
-                progress_bar["value"] = 0
-            except Exception:
-                progress_win = None
-                progress_bar = None
-                status_label = None
-
-        try:
-            for n, i in enumerate(indices):
-                label = self.labels[i] if 0 <= i < len(self.labels) else f"Trace {i + 1}"
-                if status_label is not None:
-                    status_label.config(text=f"Processing {label} ({n + 1}/{total})")
-                self.current = i
-                self.spectrum = self.spectra[i]
-                self.results = self.results_all[i]
-                self.lorentz_results = self.lorentz_all[i]
-                self.ranges = self.ranges_all[i]
-                self.auto_peaks = self.auto_peaks_all[i]
-                self.abs_peaks = self.abs_peaks_all[i]
-                try:
-                    self.peak_finder(auto=True)
-                    self.start_peak_to_peak(auto=True)
-                    self.start_analysis(auto=True)
-                    self.fit_lorentzian(auto=True)
-                except Exception as exc:
-                    errors.append(f"{label}: {exc}")
-                    print(f"[Batch Process] Error processing {label}: {exc}")
-                if progress_bar is not None:
-                    progress_bar["value"] = (n + 1) / total * 100.0
-                    progress_win.update_idletasks()
-        finally:
-            if had_silent:
-                self._silent_auto = previous_silent
-            else:
-                try:
-                    del self._silent_auto
-                except AttributeError:
-                    pass
-
-        if progress_win is not None:
-            if status_label is not None:
-                if errors:
-                    status_label.config(text="Completed with errors. Check console for details.")
-                else:
-                    status_label.config(text="Batch process completed successfully.")
-                progress_win.update_idletasks()
-            progress_win.destroy()
-
-        if errors and self.root is None:
-            print(f"[Batch Process] Completed with errors: {'; '.join(errors)}")
-
-        first = indices[0]
-        self.current = first
-        self.spectrum = self.spectra[first]
-        self.results = self.results_all[first]
-        self.lorentz_results = self.lorentz_all[first]
-        self.ranges = self.ranges_all[first]
-        self.auto_peaks = self.auto_peaks_all[first]
-        self.abs_peaks = self.abs_peaks_all[first]
-        self._refresh_tables()
+        self._save_state()
+        self._run_pipeline_for_indices(indices, "Batch Process")
 
     # ------------------------------------------------------------------
     def export_analysis_data(self) -> None:
@@ -3486,6 +3692,9 @@ class SpanPeakSelector:
         if getattr(self, "_resize_handles", None):
             self._position_resize_handles()
             return
+        required = ("cget", "bind")
+        if not all(hasattr(container, name) for name in required):
+            return
         highlight_bg = container.cget("highlightbackground") if int(container.cget("highlightthickness") or 0) else ""
         bg = highlight_bg or container.cget("bg")
         handles: list[tk.Widget] = []
@@ -3544,10 +3753,23 @@ class SpanPeakSelector:
         self._resize_state = None
         self._position_resize_handles()
 
+    def _make_boolean_var(self, value: bool) -> object:
+        """Create a BooleanVar with a fallback for headless test doubles."""
+
+        try:
+            if self.root is not None:
+                return tk.BooleanVar(master=self.root, value=value)
+            return tk.BooleanVar(value=value)
+        except Exception:
+            return _FallbackBooleanVar(value)
+
     def _toggle_dark_mode(self) -> None:
         if self._dark_mode_var is None or getattr(self, '_updating_theme', False):
             return
-        theme = 'dark' if bool(self._dark_mode_var.get()) else 'light'
+        getter = getattr(self._dark_mode_var, "get", None)
+        if not callable(getter):
+            return
+        theme = 'dark' if bool(getter()) else 'light'
         self._apply_theme(theme)
 
     def _configure_button_style(self, palette: dict[str, str]) -> None:
@@ -3632,10 +3854,12 @@ class SpanPeakSelector:
         theme_key = 'dark' if theme == 'dark' else 'light'
         palette = self._THEMES.get(theme_key, self._THEMES['light'])
         self._theme = theme_key
-        if self._dark_mode_var is not None and bool(self._dark_mode_var.get()) != (theme_key == 'dark'):
+        getter = getattr(self._dark_mode_var, "get", None) if self._dark_mode_var is not None else None
+        setter = getattr(self._dark_mode_var, "set", None) if self._dark_mode_var is not None else None
+        if callable(getter) and callable(setter) and bool(getter()) != (theme_key == 'dark'):
             self._updating_theme = True
             try:
-                self._dark_mode_var.set(theme_key == 'dark')
+                setter(theme_key == 'dark')
             finally:
                 self._updating_theme = False
         button_bg = palette.get('button_bg', palette.get('accent', '#4a90e2'))
@@ -3824,13 +4048,7 @@ class SpanPeakSelector:
         if label not in self.labels:
             return
 
-        self.current = self.labels.index(label)
-        self.spectrum = self.spectra[self.current]
-        self.results = self.results_all[self.current]
-        self.lorentz_results = self.lorentz_all[self.current]
-        self.ranges = self.ranges_all[self.current]
-        self.auto_peaks = self.auto_peaks_all[self.current]
-        self.abs_peaks = self.abs_peaks_all[self.current]
+        self._set_active_trace(self.labels.index(label))
 
         self._refresh_tables()
         self._update_metadata_display()
@@ -4205,13 +4423,17 @@ class SpanPeakSelector:
 
             view_menu = tk.Menu(menubar, tearoff=0)
             if self._dark_mode_var is None:
-                self._dark_mode_var = tk.BooleanVar(master=self.root, value=self._theme == 'dark')
-            view_menu.add_checkbutton(
-                label="Dark Mode",
-                variable=self._dark_mode_var,
-                command=self._toggle_dark_mode,
-            )
-            view_menu.add_separator()
+                self._dark_mode_var = self._make_boolean_var(self._theme == 'dark')
+            if hasattr(view_menu, "add_checkbutton"):
+                view_menu.add_checkbutton(
+                    label="Dark Mode",
+                    variable=self._dark_mode_var,
+                    command=self._toggle_dark_mode,
+                )
+            else:
+                view_menu.add_command(label="Dark Mode", command=self._toggle_dark_mode)
+            if hasattr(view_menu, "add_separator"):
+                view_menu.add_separator()
             view_menu.add_command(label="Reset View", command=self._view_settings)
 
             help_menu = tk.Menu(menubar, tearoff=0)
@@ -4292,7 +4514,7 @@ class SpanPeakSelector:
 
         self._button_cls = ButtonCls
         self._button_kwargs = dict(button_kwargs)
-        self._dark_mode_var = tk.BooleanVar(master=self.root, value=self._theme == 'dark')
+        self._dark_mode_var = self._make_boolean_var(self._theme == 'dark')
         palette = self._THEMES.get(self._theme, self._THEMES['light'])
         self._configure_button_style(palette)
 
@@ -4490,7 +4712,8 @@ class SpanPeakSelector:
             highlightcolor=border_color,
             bg=base_bg,
         )
-        self.figure_container.pack_propagate(False)
+        if hasattr(self.figure_container, "pack_propagate"):
+            self.figure_container.pack_propagate(False)
         canvas = FigureCanvasTkAgg(fig, master=self.figure_container)
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill=tk.BOTH, expand=True)

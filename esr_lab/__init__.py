@@ -15,7 +15,15 @@ from .analysis import (
     baseline_correct,
     get_resonance_field,
     calc_g,
+    calc_g_error,
     calc_lorentzian_area,
+    calc_lorentzian_area_error,
+)
+from .services import (
+    analyze_batch,
+    analyze_spectrum,
+    parse_replicate_label,
+    summarize_replicate_fits,
 )
 
 __all__ = [
@@ -33,5 +41,11 @@ __all__ = [
     "baseline_correct",
     "get_resonance_field",
     "calc_g",
+    "calc_g_error",
     "calc_lorentzian_area",
+    "calc_lorentzian_area_error",
+    "analyze_spectrum",
+    "analyze_batch",
+    "parse_replicate_label",
+    "summarize_replicate_fits",
 ]

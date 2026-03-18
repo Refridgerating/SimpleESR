@@ -38,6 +38,17 @@ Or launch the GUI to choose a file interactively:
 python -m esr_lab.gui
 ```
 
+Preview next-generation GUI scaffold:
+
+```bash
+pip install -r requirements-gui2.txt
+python -m esr_lab.gui2.app
+```
+
+Architecture and migration notes:
+
+`docs/gui2_architecture.md`
+
 After the spectrum is shown, drag the mouse over a region that contains the
 positive and negative peaks of an absorption line. The program determines both
 extrema and reports their positions and the full width at half maximum (FWHM)

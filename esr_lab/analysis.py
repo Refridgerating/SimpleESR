@@ -9,6 +9,17 @@ from scipy.signal import find_peaks
 import sympy as sp
 from scipy.constants import h, physical_constants
 
+from .core.fitting import (
+    fit_lorentzian_absorption as _core_fit_lorentzian_absorption,
+)
+from .core.fitting import (
+    fit_lorentzian_derivative as _core_fit_lorentzian_derivative,
+)
+from .core.uncertainty import (
+    propagate_g_error,
+    propagate_lorentzian_area_error,
+)
+
 MU_B = physical_constants["Bohr magneton"][0]
 
 
@@ -152,6 +163,39 @@ def calc_g(h_res: float, frequency: float) -> float:
     return float(h * freq_hz / (MU_B * h_res_t))
 
 
+def calc_g_error(
+    h_res: float,
+    frequency: float,
+    h_res_err: float,
+    frequency_err: float = 0.0,
+) -> float:
+    r"""Propagate uncertainty for the g-factor.
+
+    Uses first-order uncertainty propagation on
+    :math:`g = h\nu/(\mu_B H_{res})`.
+
+    Parameters
+    ----------
+    h_res:
+        Resonance field in millitesla.
+    frequency:
+        Microwave frequency in gigahertz.
+    h_res_err:
+        Standard uncertainty of ``h_res`` in millitesla.
+    frequency_err:
+        Standard uncertainty of ``frequency`` in gigahertz.
+    """
+
+    return float(
+        propagate_g_error(
+            h_res=h_res,
+            frequency=frequency,
+            h_res_err=h_res_err,
+            frequency_err=frequency_err,
+        )
+    )
+
+
 def calc_lorentzian_area(delta: float, amplitude: float) -> float:
     """Calculate the area under a Lorentzian absorption line.
 
@@ -178,6 +222,29 @@ def calc_lorentzian_area(delta: float, amplitude: float) -> float:
     """
 
     return float(np.pi * amplitude * delta)
+
+
+def calc_lorentzian_area_error(
+    delta: float,
+    amplitude: float,
+    delta_err: float,
+    amplitude_err: float,
+    covariance: float = 0.0,
+) -> float:
+    """Propagate uncertainty for the Lorentzian absorption area.
+
+    The area relation is ``Area = pi * A * delta``.
+    """
+
+    return float(
+        propagate_lorentzian_area_error(
+            delta=delta,
+            amplitude=amplitude,
+            delta_err=delta_err,
+            amplitude_err=amplitude_err,
+            covariance=covariance,
+        )
+    )
 
 
 def peak_finder(
@@ -395,6 +462,7 @@ def fit_lorentzian_derivative(
     field: np.ndarray,
     intensity: np.ndarray,
     p0: tuple[float, float, float, float] | None = None,
+    sigma: float | None = None,
 ) -> tuple[tuple[float, float, float, float], dict[str, object]]:
     """Fit a derivative ESR line to a Lorentzian derivative model.
 
@@ -434,44 +502,29 @@ def fit_lorentzian_derivative(
         residual array.
     """
 
-    def _model(H: np.ndarray, H_res: float, delta: float, A: float, B: float) -> np.ndarray:
-        x = H - H_res
-        denom = (x**2 + delta**2) ** 2
-        sym = -2.0 * delta**2 * x / denom
-        disp = delta * (delta**2 - x**2) / denom
-        return A * sym + B * disp
-
-    if p0 is None:
-        pos_idx = int(np.argmax(intensity))
-        neg_idx = int(np.argmin(intensity))
-        h_res_guess = (field[pos_idx] + field[neg_idx]) / 2.0
-        delta_guess = abs(field[pos_idx] - field[neg_idx]) / 2.0
-        a_guess = (intensity[pos_idx] - intensity[neg_idx]) / 2.0
-        b_guess = 0.0
-        p0 = (h_res_guess, delta_guess, a_guess, b_guess)
-
-    from scipy.optimize import curve_fit
-
-    popt, pcov = curve_fit(_model, field, intensity, p0=p0)
-    h_res, delta, A, B = popt
-
-    fitted = _model(field, h_res, delta, A, B)
-    residuals = intensity - fitted
-    chi2 = chi_square(intensity, fitted, dof=len(field) - len(popt))
-    stderr = np.sqrt(np.diag(pcov))
+    fit = _core_fit_lorentzian_derivative(field, intensity, p0=p0, sigma=sigma)
     stats = {
-        "chi2": float(chi2),
-        "stderr": tuple(float(s) for s in stderr),
-        "residuals": residuals.astype(float),
+        "chi2": float(fit.diagnostics.chi2),
+        "stderr": tuple(float(s) for s in fit.diagnostics.stderr),
+        "residuals": fit.diagnostics.residuals.astype(float),
+        "covariance": fit.diagnostics.covariance.astype(float),
     }
-
-    return (float(h_res), float(delta), float(A), float(B)), stats
+    return (
+        (
+            float(fit.params[0]),
+            float(fit.params[1]),
+            float(fit.params[2]),
+            float(fit.params[3]),
+        ),
+        stats,
+    )
 
 
 def fit_lorentzian_absorption(
     field: np.ndarray,
     intensity: np.ndarray,
     p0: tuple[float, float, float, float] | None = None,
+    sigma: float | None = None,
 ) -> tuple[tuple[float, float, float, float], dict[str, object]]:
     """Fit an absorption spectrum to a Lorentzian model.
 
@@ -502,37 +555,22 @@ def fit_lorentzian_absorption(
         of the fitted parameters and ``"residuals"`` holding the residual array.
     """
 
-    def _model(H: np.ndarray, H_res: float, delta: float, A: float, C: float) -> np.ndarray:
-        x = H - H_res
-        return A * delta**2 / (x**2 + delta**2) + C
-
-    if p0 is None:
-        peak_idx = int(np.argmax(intensity))
-        h_res_guess = float(field[peak_idx])
-        a_guess = float(intensity[peak_idx] - np.min(intensity))
-        c_guess = float(np.min(intensity))
-        if len(field) > 1:
-            delta_guess = float((field[-1] - field[0]) / len(field))
-        else:
-            delta_guess = 1.0
-        p0 = (h_res_guess, delta_guess, a_guess, c_guess)
-
-    from scipy.optimize import curve_fit
-
-    popt, pcov = curve_fit(_model, field, intensity, p0=p0)
-    h_res, delta, A, C = popt
-
-    fitted = _model(field, h_res, delta, A, C)
-    residuals = intensity - fitted
-    chi2 = chi_square(intensity, fitted, dof=len(field) - len(popt))
-    stderr = np.sqrt(np.diag(pcov))
+    fit = _core_fit_lorentzian_absorption(field, intensity, p0=p0, sigma=sigma)
     stats = {
-        "chi2": float(chi2),
-        "stderr": tuple(float(s) for s in stderr),
-        "residuals": residuals.astype(float),
+        "chi2": float(fit.diagnostics.chi2),
+        "stderr": tuple(float(s) for s in fit.diagnostics.stderr),
+        "residuals": fit.diagnostics.residuals.astype(float),
+        "covariance": fit.diagnostics.covariance.astype(float),
     }
-
-    return (float(h_res), float(delta), float(A), float(C)), stats
+    return (
+        (
+            float(fit.params[0]),
+            float(fit.params[1]),
+            float(fit.params[2]),
+            float(fit.params[3]),
+        ),
+        stats,
+    )
 
 
 def get_resonance_field(
@@ -589,9 +627,17 @@ FUNCTION_DETAILS: dict[str, tuple[str, sp.Expr | None]] = {
         "Compute the g-factor from resonance field and frequency",
         sp.Eq(g_sym, h_sym * nu / (mu_B_sym * H)),
     ),
+    "calc_g_error": (
+        "Propagate uncertainty for the g-factor",
+        None,
+    ),
     "calc_lorentzian_area": (
         "Calculate the area under a Lorentzian absorption line",
         sp.Eq(Area, sp.pi * A * delta_sym),
+    ),
+    "calc_lorentzian_area_error": (
+        "Propagate uncertainty for Lorentzian area",
+        None,
     ),
     "fit_lorentzian_derivative": (
         "Fit a derivative ESR line to a Lorentzian derivative model",

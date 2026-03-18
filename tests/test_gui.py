@@ -283,17 +283,11 @@ def test_analyze_spectra_runs_pipeline():
     spectrum = ESRSpectrum(field=np.arange(5.0), intensity=np.zeros(5))
     selector = gui.SpanPeakSelector(spectrum)
 
-    with patch.object(selector, "peak_finder") as pf, \
-        patch.object(selector, "start_peak_to_peak") as dhpp, \
-        patch.object(selector, "start_analysis") as fwhm, \
-        patch.object(selector, "fit_lorentzian") as fit, \
-        patch.object(selector, "calculate_g") as gcalc:
+    with patch.object(selector, "_save_state") as save, \
+        patch.object(selector, "_run_pipeline_for_indices") as run:
         selector.analyze_spectra()
-        pf.assert_called_once()
-        dhpp.assert_called_once_with(auto=True)
-        fwhm.assert_called_once_with(auto=True)
-        fit.assert_called_once_with(auto=True)
-        gcalc.assert_called_once()
+        save.assert_called_once()
+        run.assert_called_once_with([selector.current], "Analyze Spectra")
 
 
 def test_batch_process_respects_selection():
@@ -301,18 +295,13 @@ def test_batch_process_respects_selection():
     spec2 = ESRSpectrum(field=np.arange(5.0), intensity=np.ones(5))
     selector = gui.SpanPeakSelector([spec1, spec2], labels=["one", "two"])
 
-    with patch.object(selector, "peak_finder") as pf, \
-        patch.object(selector, "start_peak_to_peak") as dhpp, \
-        patch.object(selector, "start_analysis") as fwhm, \
-        patch.object(selector, "fit_lorentzian") as fit, \
+    with patch.object(selector, "_save_state") as save, \
+        patch.object(selector, "_run_pipeline_for_indices") as run, \
         patch.object(selector, "_select_batch_spectra", return_value=[1]):
         selector.batch_process()
 
-    pf.assert_called_once()
-    dhpp.assert_called_once_with(auto=True)
-    fwhm.assert_called_once_with(auto=True)
-    fit.assert_called_once_with(auto=True)
-    assert selector.current == 1
+    save.assert_called_once()
+    run.assert_called_once_with([1], "Batch Process")
 
 
 def test_start_analysis_auto_processes_all_peaks():
